@@ -111,35 +111,60 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
 
-            Section {
-                numericRow(title: "Max entries", value: $textMaxEntries, range: 1...1_000_000, step: 1_000)
-                numericRow(title: "Max total size", value: $textMaxMB, range: 1...50_000, step: 10, suffix: "MB")
-            } header: {
-                sectionHeader(
-                    title: "Text limits",
-                    icon: "doc.text",
-                    count: stats?.textCount ?? 0,
-                    bytes: stats?.textBytes ?? 0
+            Section("Text limits") {
+                NumericInputRow(
+                    title: "Max entries",
+                    pill: formatCount(stats?.textCount),
+                    value: $textMaxEntries,
+                    range: 1...1_000_000,
+                    step: 1_000
+                )
+                NumericInputRow(
+                    title: "Max total size",
+                    pill: formatBytes(stats?.textBytes),
+                    value: $textMaxMB,
+                    range: 1...50_000,
+                    step: 10,
+                    suffix: "MB"
                 )
             }
 
-            Section {
-                numericRow(title: "Max entries", value: $imageMaxEntries, range: 1...10_000, step: 50)
-                numericRow(title: "Max total size", value: $imageMaxMB, range: 1...50_000, step: 20, suffix: "MB")
-            } header: {
-                sectionHeader(
-                    title: "Image limits",
-                    icon: "photo",
-                    count: stats?.imageCount ?? 0,
-                    bytes: stats?.imageBytes ?? 0
+            Section("Image limits") {
+                NumericInputRow(
+                    title: "Max entries",
+                    pill: formatCount(stats?.imageCount),
+                    value: $imageMaxEntries,
+                    range: 1...10_000,
+                    step: 50
+                )
+                NumericInputRow(
+                    title: "Max total size",
+                    pill: formatBytes(stats?.imageBytes),
+                    value: $imageMaxMB,
+                    range: 1...50_000,
+                    step: 20,
+                    suffix: "MB"
                 )
             }
 
-            Section {
+            Section("Shell history") {
                 Toggle("Capture shell history", isOn: $shellEnabled)
                 if shellEnabled {
-                    numericRow(title: "Max entries", value: $shellMaxEntries, range: 1...500_000, step: 1_000)
-                    numericRow(title: "Max total size", value: $shellMaxMB, range: 1...10_000, step: 5, suffix: "MB")
+                    NumericInputRow(
+                        title: "Max entries",
+                        pill: formatCount(stats?.shellCount),
+                        value: $shellMaxEntries,
+                        range: 1...500_000,
+                        step: 1_000
+                    )
+                    NumericInputRow(
+                        title: "Max total size",
+                        pill: formatBytes(stats?.shellBytes),
+                        value: $shellMaxMB,
+                        range: 1...10_000,
+                        step: 5,
+                        suffix: "MB"
+                    )
                     HStack {
                         Text("History file")
                         Spacer()
@@ -148,13 +173,6 @@ struct SettingsView: View {
                             .textFieldStyle(.roundedBorder)
                     }
                 }
-            } header: {
-                sectionHeader(
-                    title: "Shell history",
-                    icon: "terminal",
-                    count: stats?.shellCount ?? 0,
-                    bytes: stats?.shellBytes ?? 0
-                )
             }
 
             Section("Retention") { retentionPicker }
@@ -163,24 +181,14 @@ struct SettingsView: View {
         }
     }
 
-    private func sectionHeader(title: String, icon: String, count: Int, bytes: Int64) -> some View {
-        HStack {
-            Label(title, systemImage: icon)
-            Spacer()
-            HStack(spacing: 5) {
-                Text("\(NumberFormatter.localizedString(from: NSNumber(value: count), number: .decimal)) items")
-                Text("·")
-                Text(ByteSize.format(bytes))
-            }
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2.5)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.primary.opacity(0.07))
-            )
-        }
+    private func formatCount(_ count: Int?) -> String {
+        let val = count ?? 0
+        return "\(NumberFormatter.localizedString(from: NSNumber(value: val), number: .decimal)) current"
+    }
+
+    private func formatBytes(_ bytes: Int64?) -> String {
+        let val = bytes ?? 0
+        return "\(ByteSize.format(val)) current"
     }
 
     private var retentionPicker: some View {
@@ -274,18 +282,6 @@ struct SettingsView: View {
             .fixedSize()
             .help("Add a currently running app")
         }
-    }
-
-    // MARK: - Safe Numeric Row
-
-    private func numericRow(
-        title: String,
-        value: Binding<Int>,
-        range: ClosedRange<Int>,
-        step: Int,
-        suffix: String? = nil
-    ) -> some View {
-        NumericInputRow(title: title, value: value, range: range, step: step, suffix: suffix)
     }
 
     // MARK: - Load / save
@@ -411,25 +407,42 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Strictly Bounded Numeric Input Row
+// MARK: - Strictly Bounded & Fixed-Height Numeric Input Row
 
 private struct NumericInputRow: View {
     let title: String
+    var pill: String? = nil
     @Binding var value: Int
     let range: ClosedRange<Int>
     let step: Int
-    var suffix: String?
+    var suffix: String? = nil
 
     @State private var text: String = ""
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             Text(title)
-            Spacer()
+                .lineLimit(1)
+
+            if let pill {
+                Text(pill)
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.primary.opacity(0.07))
+                    )
+            }
+
+            Spacer(minLength: 12)
+
             TextField("", text: $text)
-                .frame(width: suffix != nil ? 70 : 85)
+                .frame(width: 80, height: 22)
                 .multilineTextAlignment(.trailing)
                 .textFieldStyle(.roundedBorder)
+                .lineLimit(1)
                 .onChange(of: text) { _, newText in
                     let digits = newText.filter { $0.isNumber }
                     if let parsed = Int(digits) {
@@ -447,11 +460,13 @@ private struct NumericInputRow: View {
                 .onSubmit {
                     commitText()
                 }
+
             if let suffix {
                 Text(suffix)
                     .foregroundStyle(.secondary)
                     .frame(width: 25, alignment: .leading)
             }
+
             Stepper("", value: Binding(
                 get: { value },
                 set: {
@@ -462,6 +477,7 @@ private struct NumericInputRow: View {
             ), in: range, step: step)
             .labelsHidden()
         }
+        .frame(minHeight: 26)
         .onAppear {
             text = String(value)
         }

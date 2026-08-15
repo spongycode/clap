@@ -12,6 +12,7 @@
   <a href="https://github.com/spongycode/clap/releases"><img src="https://img.shields.io/github/v/release/spongycode/clap?style=flat-square&color=black" alt="Release"></a>
   <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/swift-6.0-orange?style=flat-square" alt="Swift 6">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/telemetry-zero-green?style=flat-square" alt="Zero Telemetry">
 </p>
 
@@ -138,3 +139,9 @@ clap pause / clap resume                          # Toggle clipboard monitoring
 - Zero network requests, zero telemetry, zero analytics.
 - Password managers and concealed clipboard types are automatically ignored.
 - Exclude any app by bundle ID via Settings UI or `clap config set exclusions '["com.example.app"]'`.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
