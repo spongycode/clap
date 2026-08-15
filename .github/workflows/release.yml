@@ -16,6 +16,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+
       - name: Build and package release
         run: |
           chmod +x Scripts/make_app.sh
