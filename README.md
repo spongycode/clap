@@ -27,6 +27,20 @@
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="Resources/screens/classic_items.png" width="49%" alt="Classic Tab — Clipboard History & Previews" />
+  <img src="Resources/screens/media_items.png" width="49%" alt="Media Tab — Image History & Tags" />
+</p>
+
+<p align="center">
+  <img src="Resources/screens/shell_items.png" width="49%" alt="Shell Tab — Shell Command History" />
+  <img src="Resources/screens/settings.png" width="49%" alt="Settings Window — Limits & Customization" />
+</p>
+
+---
+
 ## Installation
 
 ### Option 1: One-line install (Recommended)

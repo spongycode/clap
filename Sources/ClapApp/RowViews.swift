@@ -88,13 +88,42 @@ struct MediaCell: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 110)
                 .clipped()
+
             if entry.isPinned {
                 Image(systemName: "pin.fill")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.orange)
-                    .padding(4)
+                    .padding(5)
                     .background(.ultraThinMaterial, in: Circle())
-                    .padding(4)
+                    .padding(6)
+            }
+
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    HStack(spacing: 3.5) {
+                        if let format = entry.imageFormat?.uppercased() {
+                            Text(format)
+                                .fontWeight(.bold)
+                            Text("·")
+                        }
+                        Text(ByteSize.format(entry.sizeBytes))
+                    }
+                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.black.opacity(0.65))
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+                            )
+                    )
+                    .padding(6)
+                }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
