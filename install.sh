@@ -41,13 +41,12 @@ cleanup() {
 trap cleanup EXIT
 
 # 3. Locate or clone source
-SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo '')"
-if [ -f "$SCRIPT_DIR/Package.swift" ] && [ -f "$SCRIPT_DIR/Scripts/make_app.sh" ]; then
-    SOURCE_DIR="$SCRIPT_DIR"
+if [ -f "${0:-}" ] && [ "$(basename "$0")" = "install.sh" ]; then
+    SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
     echo "Found local source in $SOURCE_DIR"
 else
     TEMP_DIR="$(mktemp -d -t clap-install-XXXXXX)"
-    echo "Cloning repository to temporary directory..."
+    echo "Cloning repository from GitHub..."
     git clone --depth 1 https://github.com/spongycode/clap.git "$TEMP_DIR" >/dev/null 2>&1
     SOURCE_DIR="$TEMP_DIR"
 fi
