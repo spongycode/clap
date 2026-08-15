@@ -141,7 +141,7 @@ struct PreviewView: View {
     private var contentSection: some View {
         if entry.type == .text || entry.type == .shell {
             ScrollView([.vertical]) {
-                Text(entry.content ?? "")
+                Text(displayedText)
                     .font(.system(size: 12, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -227,6 +227,18 @@ struct PreviewView: View {
                 }
             }
         }
+    }
+
+    private var displayedText: String {
+        guard let content = entry.content else { return "" }
+        let maxPreviewChars = 15_000
+        if content.count <= maxPreviewChars {
+            return content
+        }
+        let prefix = content.prefix(maxPreviewChars)
+        let totalFormatted = NumberFormatter.localizedString(from: NSNumber(value: content.count), number: .decimal)
+        let previewFormatted = NumberFormatter.localizedString(from: NSNumber(value: maxPreviewChars), number: .decimal)
+        return "\(prefix)\n\n⋯ [Preview truncated: showing first \(previewFormatted) of \(totalFormatted) characters. Copying or pasting will include the entire text.]"
     }
 
     private var entryTypeDescription: String {
