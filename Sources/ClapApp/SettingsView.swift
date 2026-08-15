@@ -19,7 +19,7 @@ final class SettingsWindowController: NSObject {
     func show() {
         if window == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 480, height: 580),
+                contentRect: NSRect(x: 0, y: 0, width: 500, height: 640),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
@@ -39,6 +39,7 @@ struct SettingsView: View {
     let store: ClipboardStore
 
     @State private var loaded = false
+    @State private var stats: StoreStats?
     @State private var textMaxEntries = 100_000
     @State private var textMaxMB = 50
     @State private var imageMaxEntries = 500
@@ -70,8 +71,13 @@ struct SettingsView: View {
             }
             .onChange(of: launchAtLogin) { _, value in updateLaunchAtLogin(value) }
             .formStyle(.grouped)
-            .frame(width: 480, height: 620)
-            .task { await load() }
+            .frame(width: 500, height: 640)
+            .task {
+                await load()
+            }
+            .onReceive(DistributedNotificationCenter.default().publisher(for: IPC.Name.storeChanged.notification)) { _ in
+                Task { await refreshStats() }
+            }
     }
 
     private var formWithLimitHandlers: some View {
@@ -83,13 +89,6 @@ struct SettingsView: View {
             .onChange(of: shellMaxEntries) { _, value in save("shell.max_entries", String(max(1, value))) }
             .onChange(of: shellMaxMB) { _, value in saveMegabytes("shell.max_size", megabytes: value) }
     }
-
-    private static let intFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .none
-        formatter.minimum = 1
-        return formatter
-    }()
 
     private var settingsForm: some View {
         Form {
@@ -112,19 +111,35 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
 
-            Section("Text limits") {
-                limitRow(title: "Max entries", value: $textMaxEntries)
-                sizeRow(title: "Max total size", megabytes: $textMaxMB)
+            Section {
+                numericRow(title: "Max entries", value: $textMaxEntries, range: 1...1_000_000, step: 1_000)
+                numericRow(title: "Max total size", value: $textMaxMB, range: 1...50_000, step: 10, suffix: "MB")
+            } header: {
+                sectionHeader(
+                    title: "Text limits",
+                    icon: "doc.text",
+                    count: stats?.textCount ?? 0,
+                    bytes: stats?.textBytes ?? 0
+                )
             }
-            Section("Image limits") {
-                limitRow(title: "Max entries", value: $imageMaxEntries)
-                sizeRow(title: "Max total size", megabytes: $imageMaxMB)
+
+            Section {
+                numericRow(title: "Max entries", value: $imageMaxEntries, range: 1...10_000, step: 50)
+                numericRow(title: "Max total size", value: $imageMaxMB, range: 1...50_000, step: 20, suffix: "MB")
+            } header: {
+                sectionHeader(
+                    title: "Image limits",
+                    icon: "photo",
+                    count: stats?.imageCount ?? 0,
+                    bytes: stats?.imageBytes ?? 0
+                )
             }
-            Section("Shell history") {
+
+            Section {
                 Toggle("Capture shell history", isOn: $shellEnabled)
                 if shellEnabled {
-                    limitRow(title: "Max entries", value: $shellMaxEntries)
-                    sizeRow(title: "Max total size", megabytes: $shellMaxMB)
+                    numericRow(title: "Max entries", value: $shellMaxEntries, range: 1...500_000, step: 1_000)
+                    numericRow(title: "Max total size", value: $shellMaxMB, range: 1...10_000, step: 5, suffix: "MB")
                     HStack {
                         Text("History file")
                         Spacer()
@@ -133,10 +148,38 @@ struct SettingsView: View {
                             .textFieldStyle(.roundedBorder)
                     }
                 }
+            } header: {
+                sectionHeader(
+                    title: "Shell history",
+                    icon: "terminal",
+                    count: stats?.shellCount ?? 0,
+                    bytes: stats?.shellBytes ?? 0
+                )
             }
+
             Section("Retention") { retentionPicker }
             Section("General") { generalSection }
             Section("Excluded apps") { exclusionsSection }
+        }
+    }
+
+    private func sectionHeader(title: String, icon: String, count: Int, bytes: Int64) -> some View {
+        HStack {
+            Label(title, systemImage: icon)
+            Spacer()
+            HStack(spacing: 5) {
+                Text("\(NumberFormatter.localizedString(from: NSNumber(value: count), number: .decimal)) items")
+                Text("·")
+                Text(ByteSize.format(bytes))
+            }
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2.5)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.primary.opacity(0.07))
+            )
         }
     }
 
@@ -233,30 +276,16 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Rows
+    // MARK: - Safe Numeric Row
 
-    private func limitRow(title: String, value: Binding<Int>) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            TextField("", value: value, formatter: Self.intFormatter)
-                .frame(width: 90)
-                .multilineTextAlignment(.trailing)
-            Stepper("", value: value, in: 1...1_000_000, step: 100)
-                .labelsHidden()
-        }
-    }
-
-    private func sizeRow(title: String, megabytes: Binding<Int>) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            TextField("", value: megabytes, formatter: Self.intFormatter)
-                .frame(width: 70)
-                .multilineTextAlignment(.trailing)
-            Text("MB")
-                .foregroundStyle(.secondary)
-        }
+    private func numericRow(
+        title: String,
+        value: Binding<Int>,
+        range: ClosedRange<Int>,
+        step: Int,
+        suffix: String? = nil
+    ) -> some View {
+        NumericInputRow(title: title, value: value, range: range, step: step, suffix: suffix)
     }
 
     // MARK: - Load / save
@@ -280,7 +309,12 @@ struct SettingsView: View {
            let array = try? JSONDecoder().decode([String].self, from: data) {
             exclusions = array
         }
+        await refreshStats()
         loaded = true
+    }
+
+    private func refreshStats() async {
+        stats = try? await store.stats()
     }
 
     private func configString(_ key: String) async -> String? {
@@ -374,5 +408,78 @@ struct SettingsView: View {
         guard let data = try? JSONEncoder().encode(exclusions),
               let json = String(data: data, encoding: .utf8) else { return }
         save("exclusions", json)
+    }
+}
+
+// MARK: - Strictly Bounded Numeric Input Row
+
+private struct NumericInputRow: View {
+    let title: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    let step: Int
+    var suffix: String?
+
+    @State private var text: String = ""
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField("", text: $text)
+                .frame(width: suffix != nil ? 70 : 85)
+                .multilineTextAlignment(.trailing)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: text) { _, newText in
+                    let digits = newText.filter { $0.isNumber }
+                    if let parsed = Int(digits) {
+                        let clamped = min(max(parsed, range.lowerBound), range.upperBound)
+                        value = clamped
+                        if digits != newText || parsed != clamped {
+                            text = String(clamped)
+                        }
+                    } else if digits.isEmpty {
+                        // User cleared text to re-type
+                    } else {
+                        text = String(value)
+                    }
+                }
+                .onSubmit {
+                    commitText()
+                }
+            if let suffix {
+                Text(suffix)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 25, alignment: .leading)
+            }
+            Stepper("", value: Binding(
+                get: { value },
+                set: {
+                    let clamped = min(max($0, range.lowerBound), range.upperBound)
+                    value = clamped
+                    text = String(clamped)
+                }
+            ), in: range, step: step)
+            .labelsHidden()
+        }
+        .onAppear {
+            text = String(value)
+        }
+        .onChange(of: value) { _, newValue in
+            if text != String(newValue) {
+                text = String(newValue)
+            }
+        }
+    }
+
+    private func commitText() {
+        let digits = text.filter { $0.isNumber }
+        if let parsed = Int(digits) {
+            let clamped = min(max(parsed, range.lowerBound), range.upperBound)
+            value = clamped
+            text = String(clamped)
+        } else {
+            text = String(value)
+        }
     }
 }
