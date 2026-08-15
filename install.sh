@@ -97,6 +97,7 @@ esac
 
 # 7. Launch application
 killall ClapApp 2>/dev/null || true
+sleep 0.5
 open "$APP_DEST"
 
 echo

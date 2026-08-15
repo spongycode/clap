@@ -117,8 +117,12 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard panel.isVisible else { return }
         previewController?.hide()
         panel.orderOut(nil)
-        if reactivatePreviousApp, let previousApp, !previousApp.isTerminated {
-            previousApp.activate(options: .activateIgnoringOtherApps)
+        if reactivatePreviousApp {
+            if let previousApp, !previousApp.isTerminated {
+                previousApp.activate(options: .activateIgnoringOtherApps)
+            } else {
+                NSApp.hide(nil)
+            }
         }
     }
 

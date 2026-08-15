@@ -46,12 +46,7 @@ enum Paster {
 
     /// Posts synthetic Cmd+V using CGEvent.
     private static func pasteViaCGEvent() {
-        let source = CGEventSource(stateID: .combinedSessionState) ?? CGEventSource(stateID: .hidSystemState)
-        source?.setLocalEventsFilterDuringSuppressionState(
-            [.permitLocalMouseEvents, .permitSystemDefinedEvents],
-            state: .eventSuppressionStateSuppressionInterval
-        )
-
+        let source = CGEventSource(stateID: .hidSystemState)
         let vKey = CGKeyCode(kVK_ANSI_V) // 9
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false) else {
@@ -63,9 +58,8 @@ enum Paster {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
 
-        // Post to HID tap; fallback to session tap if needed
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        keyDown.post(tap: .cgAnnotatedSessionEventTap)
+        keyUp.post(tap: .cgAnnotatedSessionEventTap)
     }
 
     /// Fallback using System Events AppleScript if CGEvent is blocked.
