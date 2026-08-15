@@ -1,6 +1,21 @@
-# clap
+<p align="center">
+  <img src="Resources/banner.png" alt="clap banner" width="100%">
+</p>
 
-A native, high-performance, local-first macOS clipboard & shell history manager.
+<h1 align="center">clap</h1>
+
+<p align="center">
+  <strong>Native, high-performance, local-first macOS clipboard & shell history manager.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/spongycode/clap/releases"><img src="https://img.shields.io/github/v/release/spongycode/clap?style=flat-square&color=black" alt="Release"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/badge/swift-6.0-orange?style=flat-square" alt="Swift 6">
+  <img src="https://img.shields.io/badge/telemetry-zero-green?style=flat-square" alt="Zero Telemetry">
+</p>
+
+<br/>
 
 - **Massive history** — 100,000 text entries, 500 images, and 50,000 shell commands by default with zero slowdown.
 - **Instant** — Hash-indexed dedup, SQLite WAL + FTS5 search, virtualized SwiftUI list, thumbnail cache.
