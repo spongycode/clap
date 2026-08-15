@@ -102,7 +102,7 @@ open "$APP_DEST"
 
 echo
 echo "${GREEN}${BOLD}==> clap is ready!${RESET}"
-echo "  • Shortcut: ${BOLD}⌘ ⇧ B${RESET} (open clipboard & shell history panel)"
+echo "  • Shortcut: ${BOLD}⌘ ⇧ V${RESET} (open clipboard & shell history panel)"
 echo "  • Tabs:     ${BOLD}⌘1${RESET} Classic  ·  ${BOLD}⌘2${RESET} Media  ·  ${BOLD}⌘3${RESET} Shell"
 echo "  • CLI:      ${BOLD}clap --help${RESET} or ${BOLD}clap stats${RESET}"
 echo

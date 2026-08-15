@@ -20,7 +20,7 @@
 
 - **Massive history** — 100,000 text entries, 500 images, and 50,000 shell commands by default with zero slowdown.
 - **Instant** — Hash-indexed dedup, SQLite WAL + FTS5 search, virtualized SwiftUI list, thumbnail cache.
-- **Keyboard-first & Fast** — `⌘⇧B` opens the panel; single click or `Enter` copies, closes, and pastes directly.
+- **Keyboard-first & Fast** — `⌘⇧V` opens the panel; single click or `Enter` copies, closes, and pastes directly.
 - **Shell History Ingestion** — Automatically captures and indexes commands from `~/.zsh_history` and `~/.bash_history`.
 - **Local-first & Private** — No network, no accounts, no telemetry, no analytics.
 - **Full CLI** — `clap` controls everything from your terminal or shell scripts.
@@ -94,7 +94,7 @@ swift test           # Run 88 unit tests
 
 ## Usage
 
-Press **⌘⇧B** to open the panel.
+Press **⌘⇧V** to open the panel (configurable in Settings to `⌘⇧B`, `⌘⇧C`, `⌥Space`, `⌘⇧Space`, `⌃⌥V`).
 
 | Key / Action | Description |
 | :--- | :--- |

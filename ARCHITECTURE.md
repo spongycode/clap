@@ -12,7 +12,7 @@ this file.
   **No AppKit/SwiftUI imports** (Foundation + CoreGraphics/ImageIO allowed for
   thumbnailing).
 - `ClapApp` (executable): NSApplication accessory app. Pasteboard monitor,
-  Carbon global hotkey (Cmd+Shift+B), SwiftUI floating panel (Classic/Media
+  Carbon global hotkey (Cmd+Shift+V), SwiftUI floating panel (Classic/Media
   tabs), menu bar item, settings window.
 - `clap` (executable, Sources/ClapCLI): subcommand CLI. Hand-rolled argument
   parsing (no external dependencies). May import AppKit only for
@@ -258,7 +258,7 @@ pgrep ClapApp), print hint to start the app.
 - Background workers (in app): periodic `enforceLimits`, `applyRetention`,
   thumbnail pre-generation, `vacuumIfNeeded` — all via detached low-priority
   tasks, never on the main actor.
-- Menu bar: clipboard icon; menu = Open (Cmd+Shift+B hint), Pause/Resume
+- Menu bar: clipboard icon; menu = Open (Cmd+Shift+V hint), Pause/Resume
   Monitoring (reflects state), Recent (top 5 text previews, truncated 40 chars),
   Settings…, Quit.
 - Settings window (SwiftUI): limits (entries + sizes with MB fields), retention

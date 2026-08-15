@@ -48,12 +48,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         hotKey = HotKeyManager()
         hotKey.onHotKey = { [weak self] in self?.panelController.toggle() }
-        hotKey.register()
 
         installMainMenu()
         installDistributedObservers()
 
-        Task { [monitor, shellMonitor] in
+        Task { [weak self, monitor, shellMonitor, store] in
+            let savedKey = (try? await store.config("ui.hotkey")) ?? "cmd+shift+v"
+            let def = HotKeyDefinition.find(savedKey)
+            self?.hotKey.register(definition: def)
+            self?.menuBar.updateShortcut(def)
+
             await monitor?.refreshConfig()
             await monitor?.start()
             await shellMonitor?.start()
@@ -64,14 +68,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        workers.stop()
-        Task { [shellMonitor] in
+        Task { [monitor, shellMonitor] in
+            await monitor?.stop()
             await shellMonitor?.stop()
         }
         hotKey?.unregister()
-        let center = DistributedNotificationCenter.default()
-        observers.forEach { center.removeObserver($0) }
-        observers.removeAll()
+        observers.forEach { DistributedNotificationCenter.default().removeObserver($0) }
     }
 
     // MARK: - Distributed notifications (IPC with the CLI)
@@ -92,6 +94,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 await self.monitor.refreshConfig()
                 await self.shellMonitor.refreshConfig()
+                let savedKey = (try? await self.store.config("ui.hotkey")) ?? "cmd+shift+v"
+                let def = HotKeyDefinition.find(savedKey)
+                self.hotKey.register(definition: def)
+                self.menuBar.updateShortcut(def)
             }
             self.menuBar.refreshCache()
         })

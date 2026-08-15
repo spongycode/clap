@@ -17,6 +17,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private var cachedRecent: [ClipboardEntry] = []
     private var cachedPaused = false
+    private var currentShortcut = HotKeyDefinition.presets[0]
 
     init(store: ClipboardStore, appState: AppState) {
         self.store = store
@@ -39,6 +40,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshCache()
     }
 
+    func updateShortcut(_ definition: HotKeyDefinition) {
+        currentShortcut = definition
+        if menu.numberOfItems > 0 {
+            rebuild()
+        }
+    }
+
     // MARK: - NSMenuDelegate
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -52,6 +60,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             guard let self else { return }
             let recent = (try? await self.store.list(type: .text, limit: 5, offset: 0)) ?? []
             let paused = ((try? await self.store.config("monitoring.paused")) ?? "0") == "1"
+            let hotkeyStr = ((try? await self.store.config("ui.hotkey")) ?? "cmd+shift+v")
+            self.currentShortcut = HotKeyDefinition.find(hotkeyStr)
             self.cachedRecent = recent
             self.cachedPaused = paused
         }
@@ -62,8 +72,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func rebuild() {
         menu.removeAllItems()
 
-        let open = NSMenuItem(title: "Open clap", action: #selector(openPanel), keyEquivalent: "b")
-        open.keyEquivalentModifierMask = [.command, .shift]
+        let open = NSMenuItem(
+            title: "Open clap",
+            action: #selector(openPanel),
+            keyEquivalent: currentShortcut.menuKey
+        )
+        open.keyEquivalentModifierMask = currentShortcut.menuModifiers
         open.target = self
         menu.addItem(open)
 

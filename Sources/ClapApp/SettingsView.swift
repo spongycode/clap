@@ -49,6 +49,7 @@ struct SettingsView: View {
     @State private var shellMaxMB = 10
     @State private var shellHistfile = ""
     @State private var retentionDays = 0
+    @State private var hotkey = "cmd+shift+v"
     @State private var launchAtLogin = false
     @State private var suppressLoginToggle = false
     @State private var launchError: String?
@@ -62,6 +63,7 @@ struct SettingsView: View {
             .onChange(of: shellEnabled) { _, value in save("shell.enabled", value ? "1" : "0") }
             .onChange(of: shellHistfile) { _, value in save("shell.histfile", value.trimmingCharacters(in: .whitespaces)) }
             .onChange(of: retentionDays) { _, value in save("retention.days", String(value)) }
+            .onChange(of: hotkey) { _, value in save("ui.hotkey", value) }
             .onChange(of: paused) { _, value in save("monitoring.paused", value ? "1" : "0") }
             .onChange(of: pasteOnCopy) { _, value in
                 save("paste.on_copy", value ? "1" : "0")
@@ -203,6 +205,11 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var generalSection: some View {
+        Picker("Global shortcut", selection: $hotkey) {
+            ForEach(HotKeyDefinition.presets) { preset in
+                Text(preset.title).tag(preset.id)
+            }
+        }
         Toggle("Launch at login", isOn: $launchAtLogin)
         if let launchError {
             Text(launchError)
@@ -297,6 +304,7 @@ struct SettingsView: View {
         shellMaxMB = await configBytesAsMB("shell.max_size", fallback: 10)
         shellHistfile = (await configString("shell.histfile")) ?? ""
         retentionDays = await configInt("retention.days", fallback: 0)
+        hotkey = (await configString("ui.hotkey")) ?? "cmd+shift+v"
         paused = await configString("monitoring.paused") == "1"
         pasteOnCopy = await configString("paste.on_copy") != "0"
         launchAtLogin = await configString("launch_at_login") == "1"
