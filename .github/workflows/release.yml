@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and package release
+        run: |
+          chmod +x Scripts/make_app.sh
+          ./Scripts/make_app.sh dist
+          
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          ZIP_NAME="clap-${TAG_NAME}.zip"
+          
+          cd dist
+          zip -r -y "../${ZIP_NAME}" clap.app
+          cd ..
+          shasum -a 256 "${ZIP_NAME}" > "${ZIP_NAME}.sha256"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            clap-*.zip
+            clap-*.zip.sha256
+          draft: false
+          prerelease: false
+          generate_release_notes: true

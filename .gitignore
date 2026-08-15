@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode / Swift Package Manager
+.build/
+Packages/
+.swiftpm/
+xcuserdata/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+
+# JetBrains / IDEs
+.idea/
+*.iml
+.vscode/
+
+# Build artifacts / Distribution
+dist/
+
+# Logs & Temporary files
+*.log
+*.tmp
