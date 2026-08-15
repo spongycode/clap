@@ -64,7 +64,9 @@ struct SettingsView: View {
             .onChange(of: paused) { _, value in save("monitoring.paused", value ? "1" : "0") }
             .onChange(of: pasteOnCopy) { _, value in
                 save("paste.on_copy", value ? "1" : "0")
-                if value { Paster.ensureTrusted(prompt: true) }
+                if value && !Paster.isTrusted {
+                    Paster.promptAccessibility()
+                }
             }
             .onChange(of: launchAtLogin) { _, value in updateLaunchAtLogin(value) }
             .formStyle(.grouped)
@@ -157,11 +159,31 @@ struct SettingsView: View {
                 .foregroundColor(.red)
         }
         Toggle("Pause monitoring", isOn: $paused)
-        Toggle("Paste into the active app on select", isOn: $pasteOnCopy)
-        if pasteOnCopy && !Paster.ensureTrusted(prompt: false) {
-            Text("Requires Accessibility permission (System Settings → Privacy & Security → Accessibility). Until granted, selecting an entry only copies it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        Toggle("Paste automatically on select", isOn: $pasteOnCopy)
+        if pasteOnCopy {
+            HStack {
+                if Paster.isTrusted {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Accessibility permission granted")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text("Accessibility permission needed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Grant Access") {
+                        Paster.promptAccessibility()
+                        Paster.openAccessibilitySettings()
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
         }
     }
 

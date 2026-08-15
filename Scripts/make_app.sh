@@ -22,7 +22,7 @@ if [ -d "$ROOT/Resources" ]; then
 fi
 
 # Ad-hoc sign so the hotkey/app behave under Gatekeeper locally.
-codesign --force --deep --sign - "$APP"
+codesign --force --deep -s - --identifier "com.spongycode.clap" "$APP"
 
 mkdir -p "$OUT/bin"
 cp "$BIN/clap" "$OUT/bin/clap"

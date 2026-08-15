@@ -3,47 +3,80 @@ import Carbon.HIToolbox
 import os
 
 /// Synthesizes a Cmd+V keystroke into the frontmost app after clap writes to
-/// the pasteboard (Maccy-style paste-on-select). The panel is nonactivating,
-/// so the target app never lost key focus — the event lands where the user
-/// was typing.
-///
-/// Posting keyboard events requires Accessibility permission. Without it this
-/// degrades to copy-only: the first attempt shows the system prompt pointing
-/// at System Settings → Privacy & Security → Accessibility.
+/// the pasteboard (Maccy-style paste-on-select).
 enum Paster {
     private static let logger = Logger(subsystem: "com.spongycode.clap", category: "paste")
+    private static var lastPromptTime: Date?
 
-    /// True when the process is trusted for Accessibility. `prompt` shows the
-    /// one-time system dialog when not yet trusted.
+    /// Returns true if Accessibility permission is granted.
+    static var isTrusted: Bool {
+        AXIsProcessTrusted()
+    }
+
+    /// Prompts the user once to grant Accessibility in System Settings.
     @discardableResult
-    static func ensureTrusted(prompt: Bool) -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt]
+    static func promptAccessibility() -> Bool {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
 
-    /// Posts Cmd+V to the session. Call after the pasteboard write, slightly
-    /// delayed so the panel has closed and the write has settled.
+    /// Opens macOS System Settings directly to Privacy & Security -> Accessibility.
+    static func openAccessibilitySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// Posts Cmd+V to the frontmost application.
     static func pasteToFrontmostApp() {
-        guard ensureTrusted(prompt: true) else {
-            logger.info("paste skipped: Accessibility permission not granted")
+        if !isTrusted {
+            // Rate-limit the system prompt to at most once every 60 seconds
+            let now = Date()
+            if lastPromptTime == nil || now.timeIntervalSince(lastPromptTime!) > 60 {
+                lastPromptTime = now
+                promptAccessibility()
+            }
+            // Attempt AppleScript fallback so paste can still succeed
+            pasteViaAppleScript()
             return
         }
-        let source = CGEventSource(stateID: .combinedSessionState)
-        // Don't let our synthetic Cmd swallow or merge with keys the user is
-        // physically holding right after pressing Enter.
+
+        pasteViaCGEvent()
+    }
+
+    /// Posts synthetic Cmd+V using CGEvent.
+    private static func pasteViaCGEvent() {
+        let source = CGEventSource(stateID: .combinedSessionState) ?? CGEventSource(stateID: .hidSystemState)
         source?.setLocalEventsFilterDuringSuppressionState(
             [.permitLocalMouseEvents, .permitSystemDefinedEvents],
-            state: .eventSuppressionStateSuppressionInterval)
+            state: .eventSuppressionStateSuppressionInterval
+        )
 
-        let vKey = CGKeyCode(kVK_ANSI_V)
+        let vKey = CGKeyCode(kVK_ANSI_V) // 9
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false) else {
-            logger.error("paste failed: could not create keyboard events")
+            logger.error("paste failed: could not create CGEvent, trying AppleScript fallback")
+            pasteViaAppleScript()
             return
         }
+
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
+
+        // Post to HID tap; fallback to session tap if needed
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
+    }
+
+    /// Fallback using System Events AppleScript if CGEvent is blocked.
+    private static func pasteViaAppleScript() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"v\" using command down")
+            var error: NSDictionary?
+            script?.executeAndReturnError(&error)
+            if let error {
+                logger.info("AppleScript paste attempt finished with info: \(error, privacy: .public)")
+            }
+        }
     }
 }
