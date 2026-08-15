@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController = SettingsWindowController(store: store)
         menuBar = MenuBarController(store: store, appState: appState)
 
-        appState.onCloseRequest = { [weak self] in self?.panelController.hide() }
+        appState.onCloseRequest = { [weak self] in self?.panelController.hide(reactivatePreviousApp: true) }
         appState.onOpenSettings = { [weak self] in self?.settingsController.show() }
         menuBar.onOpenPanel = { [weak self] in self?.panelController.show() }
         menuBar.onOpenSettings = { [weak self] in self?.settingsController.show() }

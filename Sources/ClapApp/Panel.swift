@@ -26,6 +26,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var keyMonitor: Any?
     private var previewController: PreviewController?
 
+    private var previousApp: NSRunningApplication?
+
     // Last user-chosen frame, cached so show() can restore it synchronously.
     // Persisted in the config table so it survives restarts.
     private var savedFrame: NSRect?
@@ -85,6 +87,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     func show() {
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousApp = front
+        }
         appState.panelWillShow()
         suppressFrameSave = true
         if let saved = savedFrame, frameIsOnAVisibleScreen(saved) {
@@ -107,10 +113,13 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    func hide() {
+    func hide(reactivatePreviousApp: Bool = false) {
         guard panel.isVisible else { return }
         previewController?.hide()
         panel.orderOut(nil)
+        if reactivatePreviousApp, let previousApp, !previousApp.isTerminated {
+            previousApp.activate(options: .activateIgnoringOtherApps)
+        }
     }
 
     /// Debug-only (see AppDelegate): renders the panel's own view hierarchy
