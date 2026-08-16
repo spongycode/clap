@@ -77,11 +77,11 @@ struct QueryTokenizerTests {
         ])
     }
 
-    @Test func unterminatedQuoteBecomesPhrase() {
+    @Test func unterminatedQuoteAllowsPrefixSearch() {
         let tokens = QueryTokenizer.tokenize("x \"tail end")
         #expect(tokens == [
             .init(value: "x", quoted: false),
-            .init(value: "tail end", quoted: true),
+            .init(value: "tail end", quoted: false),
         ])
     }
 }

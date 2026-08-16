@@ -105,7 +105,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Clap")
                             .font(.title2.weight(.bold))
-                        Text("Local-first clipboard & shell history manager · v0.0.1")
+                        Text("Local-first clipboard & shell history manager · v0.0.2")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -117,6 +117,7 @@ struct SettingsView: View {
                 NumericInputRow(
                     title: "Max entries",
                     pill: formatCount(stats?.textCount),
+                    pillRatio: stats.map { Double($0.textCount) / Double(max(1, textMaxEntries)) },
                     value: $textMaxEntries,
                     range: 1...1_000_000,
                     step: 1_000
@@ -124,6 +125,7 @@ struct SettingsView: View {
                 NumericInputRow(
                     title: "Max total size",
                     pill: formatBytes(stats?.textBytes),
+                    pillRatio: stats.map { Double($0.textBytes) / Double(max(1, Int64(textMaxMB) * 1024 * 1024)) },
                     value: $textMaxMB,
                     range: 1...50_000,
                     step: 10,
@@ -135,6 +137,7 @@ struct SettingsView: View {
                 NumericInputRow(
                     title: "Max entries",
                     pill: formatCount(stats?.imageCount),
+                    pillRatio: stats.map { Double($0.imageCount) / Double(max(1, imageMaxEntries)) },
                     value: $imageMaxEntries,
                     range: 1...10_000,
                     step: 50
@@ -142,6 +145,7 @@ struct SettingsView: View {
                 NumericInputRow(
                     title: "Max total size",
                     pill: formatBytes(stats?.imageBytes),
+                    pillRatio: stats.map { Double($0.imageBytes) / Double(max(1, Int64(imageMaxMB) * 1024 * 1024)) },
                     value: $imageMaxMB,
                     range: 1...50_000,
                     step: 20,
@@ -155,6 +159,7 @@ struct SettingsView: View {
                     NumericInputRow(
                         title: "Max entries",
                         pill: formatCount(stats?.shellCount),
+                        pillRatio: stats.map { Double($0.shellCount) / Double(max(1, shellMaxEntries)) },
                         value: $shellMaxEntries,
                         range: 1...500_000,
                         step: 1_000
@@ -162,6 +167,7 @@ struct SettingsView: View {
                     NumericInputRow(
                         title: "Max total size",
                         pill: formatBytes(stats?.shellBytes),
+                        pillRatio: stats.map { Double($0.shellBytes) / Double(max(1, Int64(shellMaxMB) * 1024 * 1024)) },
                         value: $shellMaxMB,
                         range: 1...10_000,
                         step: 5,
@@ -420,6 +426,7 @@ struct SettingsView: View {
 private struct NumericInputRow: View {
     let title: String
     var pill: String? = nil
+    var pillRatio: Double? = nil
     @Binding var value: Int
     let range: ClosedRange<Int>
     let step: Int
@@ -427,20 +434,34 @@ private struct NumericInputRow: View {
 
     @State private var text: String = ""
 
+    private var pillColors: (foreground: Color, background: Color) {
+        guard let ratio = pillRatio else {
+            return (.secondary, Color.primary.opacity(0.07))
+        }
+        if ratio >= 0.90 {
+            return (.red, Color.red.opacity(0.18))
+        } else if ratio >= 0.70 {
+            return (.orange, Color.orange.opacity(0.16))
+        } else {
+            return (.green, Color.green.opacity(0.15))
+        }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Text(title)
                 .lineLimit(1)
 
             if let pill {
+                let colors = pillColors
                 Text(pill)
                     .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colors.foreground)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2.5)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(Color.primary.opacity(0.07))
+                            .fill(colors.background)
                     )
             }
 

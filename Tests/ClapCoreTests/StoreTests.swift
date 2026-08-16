@@ -127,6 +127,21 @@ struct ListTests {
             #expect(missingResult == false)
         }
     }
+
+    @Test func favoriteAndUnfavorite() async throws {
+        try await withStore { store, _ in
+            let e = try #require(try await store.captureText("favorite me", sourceApp: nil)).entry
+            #expect(e.isFavorite == false)
+            let favResult = try await store.setFavorite(true, id: e.id)
+            #expect(favResult == true)
+            let fav = try #require(try await store.entry(id: e.id))
+            #expect(fav.isFavorite == true)
+            let unfavResult = try await store.setFavorite(false, id: e.id)
+            #expect(unfavResult == true)
+            let unpinned = try #require(try await store.entry(id: e.id))
+            #expect(unpinned.isFavorite == false)
+        }
+    }
 }
 
 @Suite("Search")
@@ -195,6 +210,17 @@ struct SearchTests {
             let pinned = try await store.search(SearchQuery(text: "hello", pinnedOnly: true))
             #expect(pinned.count == 1)
             #expect(pinned[0].id == all[0].id)
+        }
+    }
+
+    @Test func favoriteOnlySearch() async throws {
+        try await withStore { store, _ in
+            try await seed(store)
+            let all = try await store.search(SearchQuery(text: "hello"))
+            _ = try await store.setFavorite(true, id: all[0].id)
+            let favs = try await store.search(SearchQuery(text: "hello", favoriteOnly: true))
+            #expect(favs.count == 1)
+            #expect(favs[0].id == all[0].id)
         }
     }
 

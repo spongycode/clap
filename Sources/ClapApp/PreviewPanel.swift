@@ -17,7 +17,7 @@ final class ClapPreviewPanel: NSPanel {
 @MainActor
 final class PreviewController {
 
-    static let sideSize = NSSize(width: 360, height: 480)
+    static let sideSize = NSSize(width: 400, height: 520)
     static let bandHeight: CGFloat = 300
     private static let gap: CGFloat = 8
 
@@ -25,7 +25,7 @@ final class PreviewController {
     private let appState: AppState
     private weak var parent: NSPanel?
     private var selectionCancellable: AnyCancellable?
-    private var shownEntryID: Int64?
+    private var shownEntryKey: String?
 
     init(appState: AppState, parent: NSPanel) {
         self.appState = appState
@@ -58,8 +58,9 @@ final class PreviewController {
             hide()
             return
         }
-        if shownEntryID != entry.id || preview.contentView == nil {
-            shownEntryID = entry.id
+        let stateKey = "\(entry.id)-\(entry.isPinned)-\(entry.isFavorite)-\(entry.useCount)-\(entry.lastUsedAt.timeIntervalSince1970)-\(appState.trimmedQuery)-\(appState.regexMode)"
+        if shownEntryKey != stateKey || preview.contentView == nil {
+            shownEntryKey = stateKey
             preview.contentView = NSHostingView(
                 rootView: PreviewView(entry: entry).environmentObject(appState))
         }
@@ -71,7 +72,7 @@ final class PreviewController {
     }
 
     func hide() {
-        shownEntryID = nil
+        shownEntryKey = nil
         preview.parent?.removeChildWindow(preview)
         preview.orderOut(nil)
         preview.contentView = nil
@@ -126,7 +127,7 @@ struct PreviewView: View {
             contentSection
             Divider()
             metadataSection
-                .padding(12)
+                .padding(14)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(VisualEffectBackground())
@@ -141,11 +142,41 @@ struct PreviewView: View {
     private var contentSection: some View {
         if entry.type == .text || entry.type == .shell {
             ScrollView([.vertical]) {
-                Text(displayedText)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(12)
+                VStack(alignment: .leading, spacing: 12) {
+                    if let parsedColor = ColorParser.parse(entry.content) {
+                        HStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color(nsColor: parsedColor))
+                                .frame(width: 46, height: 46)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
+                                )
+                                .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Color Preview")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                Text(entry.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.04))
+                        )
+                    }
+
+                    Text(highlightedDisplayedText)
+                        .font(.system(size: 13, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .padding(14)
             }
         } else {
             ZStack {
@@ -171,50 +202,68 @@ struct PreviewView: View {
     }
 
     private var metadataSection: some View {
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 5) {
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
             GridRow {
-                metaLabel("ID")
-                HStack(spacing: 6) {
-                    Text(String(entry.id))
-                        .font(.system(size: 11, design: .monospaced))
+                metaLabel("Actions")
+                HStack(spacing: 8) {
+                    if (entry.type == .text || entry.type == .shell),
+                       let content = entry.content, content.count <= 1000 {
+                        Menu {
+                            ForEach(CaseConverter.CaseStyle.allCases) { style in
+                                Button {
+                                    let converted = CaseConverter.convert(content, to: style)
+                                    state.copyTransformedText(converted)
+                                } label: {
+                                    Text("\(style.rawValue)  (\(CaseConverter.convert(content, to: style).prefix(16))…)")
+                                }
+                            }
+                        } label: {
+                            Label("Copy as…", systemImage: "textformat")
+                                .font(.system(size: 11))
+                        }
+                        .menuStyle(.borderedButton)
+                        .controlSize(.small)
+                        .help("Convert text case and copy directly to clipboard")
+                    }
+
                     Button {
                         copyID()
                     } label: {
                         Label(idCopied ? "Copied" : "Copy ID",
                               systemImage: idCopied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .help("Copy the id for CLI use, e.g. clap get \(entry.id)")
+                    .controlSize(.small)
+                    .help("Copy the numeric ID for CLI use, e.g. clap get \(entry.id)")
                 }
             }
             GridRow {
                 metaLabel("Type")
                 Text(entryTypeDescription)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
             }
             GridRow {
                 metaLabel("Size")
-                Text(ByteSize.format(entry.sizeBytes)).font(.system(size: 11))
+                Text(ByteSize.format(entry.sizeBytes)).font(.system(size: 12))
             }
             GridRow {
                 metaLabel(entry.type == .shell ? "First run" : "First copied")
-                Text(Self.dateFormatter.string(from: entry.createdAt)).font(.system(size: 11))
+                Text(Self.dateFormatter.string(from: entry.createdAt)).font(.system(size: 12))
             }
             GridRow {
                 metaLabel(entry.type == .shell ? "Last run" : "Last used")
-                Text(Self.dateFormatter.string(from: entry.lastUsedAt)).font(.system(size: 11))
+                Text(Self.dateFormatter.string(from: entry.lastUsedAt)).font(.system(size: 12))
             }
             GridRow {
                 metaLabel(entry.type == .shell ? "Times run" : "Times used")
-                Text(String(entry.useCount)).font(.system(size: 11))
+                Text(String(entry.useCount)).font(.system(size: 12))
             }
             if let app = entry.sourceApp {
                 GridRow {
                     metaLabel("From")
                     Text(Self.appDisplayName(bundleID: app))
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .help(app)
                 }
             }
@@ -222,11 +271,27 @@ struct PreviewView: View {
                 GridRow {
                     metaLabel("Pinned")
                     Image(systemName: "pin.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.orange)
                 }
             }
+            if entry.isFavorite {
+                GridRow {
+                    metaLabel("Favorite")
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+            }
         }
+    }
+
+    private var highlightedDisplayedText: AttributedString {
+        SearchHighlighter.highlight(
+            text: displayedText,
+            query: state.trimmedQuery,
+            isRegex: state.regexMode
+        )
     }
 
     private var displayedText: String {

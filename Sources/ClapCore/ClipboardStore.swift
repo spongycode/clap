@@ -419,6 +419,12 @@ public actor ClipboardStore {
         return db.changes > 0
     }
 
+    @discardableResult
+    public func setFavorite(_ favorite: Bool, id: Int64) throws -> Bool {
+        try db.run("UPDATE entries SET is_favorite = ? WHERE id = ?", [.int(favorite ? 1 : 0), .int(id)])
+        return db.changes > 0
+    }
+
     /// Removes every entry (counters are kept) and wipes the contents of
     /// the images/ and thumbnails/ directories. Returns removed row count.
     @discardableResult
@@ -463,12 +469,12 @@ public actor ClipboardStore {
 
                 // Count limit: lowest last_used_at first.
                 let total = Int(try db.scalarInt64(
-                    "SELECT COUNT(*) FROM entries WHERE type = ? AND is_pinned = 0",
+                    "SELECT COUNT(*) FROM entries WHERE type = ? AND is_pinned = 0 AND is_favorite = 0",
                     [.text(type.rawValue)]) ?? 0)
                 if total > maxEntries {
                     let overflow = try db.query("""
                         SELECT \(Self.entryColumns) FROM entries
-                        WHERE type = ? AND is_pinned = 0
+                        WHERE type = ? AND is_pinned = 0 AND is_favorite = 0
                         ORDER BY last_used_at ASC, id ASC LIMIT ?
                         """,
                         [.text(type.rawValue), .int(Int64(total - maxEntries))], Self.rowToEntry)
@@ -483,18 +489,18 @@ public actor ClipboardStore {
                 // oversize content, so this is rare.
                 let oversize = try db.query("""
                     SELECT \(Self.entryColumns) FROM entries
-                    WHERE type = ? AND is_pinned = 0 AND size_bytes > ?
+                    WHERE type = ? AND is_pinned = 0 AND is_favorite = 0 AND size_bytes > ?
                     """, [.text(type.rawValue), .int(maxSize)], Self.rowToEntry)
                 if !oversize.isEmpty {
                     try deleteRowsInCurrentTransaction(oversize)
                     victims += oversize
                 }
 
-                // Byte limit over the remaining non-pinned rows. Fetched in
+                // Byte limit over the remaining non-pinned, non-favorite rows. Fetched in
                 // LRU-ordered batches — never all rows at once, which at 100k
                 // entries would defeat the low-memory requirement.
                 var usage = try db.scalarInt64(
-                    "SELECT COALESCE(SUM(size_bytes), 0) FROM entries WHERE type = ? AND is_pinned = 0",
+                    "SELECT COALESCE(SUM(size_bytes), 0) FROM entries WHERE type = ? AND is_pinned = 0 AND is_favorite = 0",
                     [.text(type.rawValue)]) ?? 0
                 if usage > maxSize {
                     var byteVictims: [ClipboardEntry] = []
@@ -505,7 +511,7 @@ public actor ClipboardStore {
                     outer: while usage > maxSize {
                         let batch = try db.query("""
                             SELECT \(Self.entryColumns) FROM entries
-                            WHERE type = ? AND is_pinned = 0
+                            WHERE type = ? AND is_pinned = 0 AND is_favorite = 0
                               AND (last_used_at > ? OR (last_used_at = ? AND id > ?))
                             ORDER BY last_used_at ASC, id ASC LIMIT 500
                             """,
@@ -545,7 +551,7 @@ public actor ClipboardStore {
         while true {
             let victims = try db.query("""
                 SELECT \(Self.entryColumns) FROM entries
-                WHERE is_pinned = 0 AND last_used_at < ? LIMIT 500
+                WHERE is_pinned = 0 AND is_favorite = 0 AND last_used_at < ? LIMIT 500
                 """, [.double(cutoff)], Self.rowToEntry)
             guard !victims.isEmpty else { break }
             try db.transaction {
@@ -799,7 +805,7 @@ public actor ClipboardStore {
 
     // MARK: - Internal helpers
 
-    static let entryColumns = "id, type, content, image_path, image_format, content_hash, created_at, last_used_at, size_bytes, is_pinned, use_count, source_app"
+    static let entryColumns = "id, type, content, image_path, image_format, content_hash, created_at, last_used_at, size_bytes, is_pinned, is_favorite, use_count, source_app"
 
     static func rowToEntry(_ stmt: Statement) -> ClipboardEntry {
         ClipboardEntry(
@@ -813,8 +819,9 @@ public actor ClipboardStore {
             lastUsedAt: Date(timeIntervalSince1970: stmt.double(7)),
             sizeBytes: stmt.int64(8),
             isPinned: stmt.int64(9) != 0,
-            useCount: Int(stmt.int64(10)),
-            sourceApp: stmt.text(11)
+            isFavorite: stmt.int64(10) != 0,
+            useCount: Int(stmt.int64(11)),
+            sourceApp: stmt.text(12)
         )
     }
 
@@ -833,7 +840,25 @@ public actor ClipboardStore {
     /// yyyy-MM-dd for the current day (local calendar).
     static func dayKey(_ date: Date = Date()) -> String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        return String(format: "%04d-%02d-%02d", c.year ?? 1970, c.month ?? 1, c.day ?? 1)
+    }
+
+    private func bumpDailyCounter(_ keyPrefix: String) throws {
+        try incrementCounter("\(keyPrefix)_\(Self.dayKey())")
+    }
+
+    private func runRetentionCleanup() {
+        let maxAgeDays = (try? configInt("retention.days")) ?? 0
+        guard maxAgeDays > 0 else { return }
+        let cutoff = Date().addingTimeInterval(-Double(maxAgeDays) * 86_400)
+        let entries = try? db.query("SELECT \(Self.entryColumns) FROM entries WHERE created_at < ? AND is_pinned = 0 AND is_favorite = 0",
+                                    [.double(cutoff.timeIntervalSince1970)], Self.rowToEntry)
+        if let entries, !entries.isEmpty {
+            try? db.transaction {
+                try deleteRowsInCurrentTransaction(entries)
+                removeFiles(for: entries)
+            }
+        }
     }
 
     private func configInt(_ key: String) throws -> Int {
@@ -888,6 +913,7 @@ public actor ClipboardStore {
             binds.append(contentsOf: filter.binds)
         }
         if query.pinnedOnly { conditions.append("is_pinned = 1") }
+        if query.favoriteOnly { conditions.append("is_favorite = 1") }
         var sql = "SELECT \(Self.entryColumns) FROM entries"
         if !conditions.isEmpty { sql += " WHERE " + conditions.joined(separator: " AND ") }
         sql += " ORDER BY last_used_at DESC, id DESC LIMIT ? OFFSET ?"
@@ -922,6 +948,7 @@ public actor ClipboardStore {
             binds.append(contentsOf: filter.binds)
         }
         if query.pinnedOnly { sql += " AND e.is_pinned = 1" }
+        if query.favoriteOnly { sql += " AND e.is_favorite = 1" }
         sql += " ORDER BY e.last_used_at DESC, e.id DESC LIMIT ? OFFSET ?"
         binds.append(.int(Int64(max(0, query.limit))))
         binds.append(.int(Int64(max(0, query.offset))))
@@ -938,7 +965,7 @@ public actor ClipboardStore {
     /// Batched candidate scan over text entries in last_used_at DESC order.
     /// Calls `visit` per row; stops when `visit` returns false, the scan cap
     /// is reached, or the time budget is exhausted (partial results).
-    private func scanTextEntries(pinnedOnly: Bool, contentType: EntryType? = nil,
+    private func scanTextEntries(pinnedOnly: Bool, favoriteOnly: Bool = false, contentType: EntryType? = nil,
                                  _ visit: (ClipboardEntry) throws -> Bool) throws {
         var scanned = 0
         var dbOffset = 0
@@ -949,6 +976,7 @@ public actor ClipboardStore {
             var sql = "SELECT \(Self.entryColumns) FROM entries WHERE type IN ('text', 'shell')"
             if let only = contentType { sql += " AND type = '\(only.rawValue)'" }
             if pinnedOnly { sql += " AND is_pinned = 1" }
+            if favoriteOnly { sql += " AND is_favorite = 1" }
             sql += " ORDER BY last_used_at DESC, id DESC LIMIT ? OFFSET ?"
             let batch = try db.query(sql, [.int(Int64(Self.regexScanBatchSize)), .int(Int64(dbOffset))],
                                      Self.rowToEntry)
@@ -974,7 +1002,7 @@ public actor ClipboardStore {
         var toSkip = max(0, query.offset)
         let limit = max(0, query.limit)
         guard limit > 0 else { return [] }
-        try scanTextEntries(pinnedOnly: query.pinnedOnly, contentType: single) { entry in
+        try scanTextEntries(pinnedOnly: query.pinnedOnly, favoriteOnly: query.favoriteOnly, contentType: single) { entry in
             if let content = entry.content, SafeRegex.matches(regex, in: content) {
                 if toSkip > 0 {
                     toSkip -= 1
