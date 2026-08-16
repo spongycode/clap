@@ -171,6 +171,78 @@ struct PreviewView: View {
                         )
                     }
 
+                    if let content = entry.content, let decodedB64 = TextTransformer.decodeBase64(content) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.blue)
+                                .frame(width: 22, height: 22)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("Base64 Decoded")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Button {
+                                        state.copyTransformedText(decodedB64)
+                                    } label: {
+                                        Label("Copy Decoded", systemImage: "doc.on.doc")
+                                            .font(.system(size: 10))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                }
+                                Text(decodedB64)
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .lineLimit(3)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.blue.opacity(0.06))
+                        )
+                    }
+
+                    if let content = entry.content, let decodedURL = TextTransformer.decodeURL(content) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "link")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.teal)
+                                .frame(width: 22, height: 22)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("URL Decoded")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Button {
+                                        state.copyTransformedText(decodedURL)
+                                    } label: {
+                                        Label("Copy Decoded", systemImage: "doc.on.doc")
+                                            .font(.system(size: 10))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                }
+                                Text(decodedURL)
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .lineLimit(3)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.teal.opacity(0.06))
+                        )
+                    }
+
                     Text(highlightedDisplayedText)
                         .font(.system(size: 13, design: .monospaced))
                         .textSelection(.enabled)
@@ -207,14 +279,46 @@ struct PreviewView: View {
                 metaLabel("Actions")
                 HStack(spacing: 8) {
                     if (entry.type == .text || entry.type == .shell),
-                       let content = entry.content, content.count <= 1000 {
+                       let content = entry.content, content.count <= 10_000 {
                         Menu {
-                            ForEach(CaseConverter.CaseStyle.allCases) { style in
+                            if content.count <= 1000 {
+                                Section("Text Case") {
+                                    ForEach(CaseConverter.CaseStyle.allCases) { style in
+                                        Button {
+                                            let converted = CaseConverter.convert(content, to: style)
+                                            state.copyTransformedText(converted)
+                                        } label: {
+                                            Text("\(style.rawValue)  (\(CaseConverter.convert(content, to: style).prefix(16))…)")
+                                        }
+                                    }
+                                }
+                            }
+                            Section("Encode / Decode") {
                                 Button {
-                                    let converted = CaseConverter.convert(content, to: style)
+                                    let converted = TextTransformer.encodeBase64(content)
                                     state.copyTransformedText(converted)
                                 } label: {
-                                    Text("\(style.rawValue)  (\(CaseConverter.convert(content, to: style).prefix(16))…)")
+                                    Text("Base64 Encode")
+                                }
+                                if let decoded = TextTransformer.decodeBase64(content) {
+                                    Button {
+                                        state.copyTransformedText(decoded)
+                                    } label: {
+                                        Text("Base64 Decode  (\(decoded.prefix(16))…)")
+                                    }
+                                }
+                                Button {
+                                    let converted = TextTransformer.encodeURL(content)
+                                    state.copyTransformedText(converted)
+                                } label: {
+                                    Text("URL Encode")
+                                }
+                                if let decoded = TextTransformer.decodeURL(content) {
+                                    Button {
+                                        state.copyTransformedText(decoded)
+                                    } label: {
+                                        Text("URL Decode  (\(decoded.prefix(16))…)")
+                                    }
                                 }
                             }
                         } label: {
@@ -223,7 +327,7 @@ struct PreviewView: View {
                         }
                         .menuStyle(.borderedButton)
                         .controlSize(.small)
-                        .help("Convert text case and copy directly to clipboard")
+                        .help("Convert text case or encode/decode and copy directly to clipboard")
                     }
 
                     Button {

@@ -66,12 +66,34 @@ struct EntryRow: View {
         .contextMenu {
             Button("Copy") { state.copy(entry) }
             if (entry.type == .text || entry.type == .shell),
-               let content = entry.content, content.count <= 1000 {
+               let content = entry.content, content.count <= 10_000 {
                 Menu("Copy As") {
-                    ForEach(CaseConverter.CaseStyle.allCases) { style in
-                        Button(style.rawValue) {
-                            let converted = CaseConverter.convert(content, to: style)
-                            state.copyTransformedText(converted)
+                    if content.count <= 1000 {
+                        Section("Text Case") {
+                            ForEach(CaseConverter.CaseStyle.allCases) { style in
+                                Button(style.rawValue) {
+                                    let converted = CaseConverter.convert(content, to: style)
+                                    state.copyTransformedText(converted)
+                                }
+                            }
+                        }
+                    }
+                    Section("Encode / Decode") {
+                        Button("Base64 Encode") {
+                            state.copyTransformedText(TextTransformer.encodeBase64(content))
+                        }
+                        if let decoded = TextTransformer.decodeBase64(content) {
+                            Button("Base64 Decode") {
+                                state.copyTransformedText(decoded)
+                            }
+                        }
+                        Button("URL Encode") {
+                            state.copyTransformedText(TextTransformer.encodeURL(content))
+                        }
+                        if let decoded = TextTransformer.decodeURL(content) {
+                            Button("URL Decode") {
+                                state.copyTransformedText(decoded)
+                            }
                         }
                     }
                 }
@@ -285,6 +307,43 @@ enum CaseConverter {
         }
         flush()
         return words
+    }
+}
+
+// MARK: - Text transformer (Base64 & URL encode/decode)
+
+enum TextTransformer {
+    static let maxTransformLength = 10_000
+
+    static func decodeBase64(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 4, trimmed.count <= maxTransformLength else { return nil }
+        let pattern = "^[A-Za-z0-9+/]+={0,2}$"
+        guard trimmed.range(of: pattern, options: .regularExpression) != nil else { return nil }
+        guard let data = Data(base64Encoded: trimmed),
+              let decoded = String(data: data, encoding: .utf8),
+              !decoded.isEmpty,
+              decoded != trimmed,
+              decoded.allSatisfy({ !$0.isASCII || $0.isWhitespace || $0.isLetter || $0.isNumber || $0.isPunctuation || $0.isSymbol }) else {
+            return nil
+        }
+        return decoded
+    }
+
+    static func encodeBase64(_ text: String) -> String {
+        Data(text.utf8).base64EncodedString()
+    }
+
+    static func decodeURL(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("%"), trimmed.count <= maxTransformLength else { return nil }
+        guard let decoded = trimmed.removingPercentEncoding, decoded != trimmed else { return nil }
+        return decoded
+    }
+
+    static func encodeURL(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
     }
 }
 
