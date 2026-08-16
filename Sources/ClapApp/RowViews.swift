@@ -55,7 +55,7 @@ struct EntryRow: View {
             Button("Delete", role: .destructive) { state.delete(entry) }
         }
         .onAppear { state.loadMoreIfNeeded(entry) }
-        .id(entry.id)
+        .id("\(entry.id)-\(entry.isPinned)")
     }
 
     private var preview: String {
@@ -146,7 +146,7 @@ struct MediaCell: View {
             Button("Delete", role: .destructive) { state.delete(entry) }
         }
         .onAppear { state.loadMoreIfNeeded(entry) }
-        .id(entry.id)
+        .id("\(entry.id)-\(entry.isPinned)")
     }
 }
 

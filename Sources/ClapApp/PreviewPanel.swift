@@ -25,7 +25,7 @@ final class PreviewController {
     private let appState: AppState
     private weak var parent: NSPanel?
     private var selectionCancellable: AnyCancellable?
-    private var shownEntryID: Int64?
+    private var shownEntryKey: String?
 
     init(appState: AppState, parent: NSPanel) {
         self.appState = appState
@@ -58,8 +58,9 @@ final class PreviewController {
             hide()
             return
         }
-        if shownEntryID != entry.id || preview.contentView == nil {
-            shownEntryID = entry.id
+        let stateKey = "\(entry.id)-\(entry.isPinned)-\(entry.useCount)-\(entry.lastUsedAt.timeIntervalSince1970)"
+        if shownEntryKey != stateKey || preview.contentView == nil {
+            shownEntryKey = stateKey
             preview.contentView = NSHostingView(
                 rootView: PreviewView(entry: entry).environmentObject(appState))
         }
@@ -71,7 +72,7 @@ final class PreviewController {
     }
 
     func hide() {
-        shownEntryID = nil
+        shownEntryKey = nil
         preview.parent?.removeChildWindow(preview)
         preview.orderOut(nil)
         preview.contentView = nil
