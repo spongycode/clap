@@ -457,15 +457,66 @@ struct PreviewView: View {
                 .padding(14)
             }
         } else {
-            ZStack {
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .padding(8)
-                } else {
-                    ProgressView()
+            ScrollView([.vertical]) {
+                VStack(spacing: 12) {
+                    ZStack {
+                        if let image {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                                )
+                        } else {
+                            ProgressView()
+                                .frame(height: 140)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+
+                    if let ocrText = entry.content, !ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Label("Extracted Text (OCR)", systemImage: "doc.text.viewfinder")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Button {
+                                    state.copyTransformedText(ocrText)
+                                } label: {
+                                    Label("Copy Text", systemImage: "doc.on.doc")
+                                        .font(.system(size: 10))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+
+                            Text(ocrText)
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(Color.primary.opacity(0.04))
+                                )
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.03))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+                                )
+                        )
+                    }
                 }
+                .padding(14)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .task(id: entry.id) {
@@ -484,6 +535,17 @@ struct PreviewView: View {
             GridRow {
                 metaLabel("Actions")
                 HStack(spacing: 8) {
+                    if entry.type == .image, let ocrText = entry.content, !ocrText.isEmpty {
+                        Button {
+                            state.copyTransformedText(ocrText)
+                        } label: {
+                            Label("Copy Text", systemImage: "doc.text.viewfinder")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Copy recognized OCR text from this image")
+                    }
                     if (entry.type == .text || entry.type == .shell),
                        let content = entry.content, content.count <= 10_000 {
                         Menu {

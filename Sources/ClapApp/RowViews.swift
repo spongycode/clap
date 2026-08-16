@@ -137,6 +137,9 @@ struct EntryRow: View {
                     }
                 }
             }
+            if entry.type == .image, let ocrText = entry.content, !ocrText.isEmpty {
+                Button("Copy Extracted Text") { state.copyTransformedText(ocrText) }
+            }
             Button(entry.isFavorite ? "Remove from Favs" : "Add to Favs") { state.toggleFavorite(entry) }
             Button(entry.isPinned ? "Unpin" : "Pin") { state.togglePin(entry) }
             Divider()
@@ -164,6 +167,12 @@ struct EntryRow: View {
                 .filter { !$0.isEmpty }
                 .joined(separator: " ")
         case .image:
+            if let ocrText = entry.content, !ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return ocrText.prefix(500)
+                    .components(separatedBy: .whitespacesAndNewlines)
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+            }
             let format = entry.imageFormat?.uppercased() ?? "IMAGE"
             return "\(format) image · \(ByteSize.format(entry.sizeBytes))"
         }

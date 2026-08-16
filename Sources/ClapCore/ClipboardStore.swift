@@ -133,13 +133,14 @@ public actor ClipboardStore {
             } catch {
                 throw ClapCoreError.io("failed to write image file at \(fileURL.path)")
             }
+            let ocrText = OCRScanner.recognizeText(from: data)
             do {
                 try db.run("""
                     INSERT INTO entries (type, content, image_path, image_format, content_hash,
                                          created_at, last_used_at, size_bytes, is_pinned, use_count, source_app)
-                    VALUES ('image', NULL, ?, ?, ?, ?, ?, ?, 0, 1, ?)
+                    VALUES ('image', ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
                     """,
-                    [.text(relativePath), .text(ext), .text(hash), .double(now), .double(now),
+                    [ocrText.map(SQLValue.text) ?? .null, .text(relativePath), .text(ext), .text(hash), .double(now), .double(now),
                      .int(Int64(data.count)), sourceApp.map(SQLValue.text) ?? .null])
                 guard let inserted = try firstEntry("id = ?", [.int(db.lastInsertRowid)]) else {
                     throw ClapCoreError.database(code: 0, message: "insert did not produce a row")
@@ -302,13 +303,14 @@ public actor ClipboardStore {
             } catch {
                 throw ClapCoreError.io("failed to write image file at \(fileURL.path)")
             }
+            let ocrText = OCRScanner.recognizeText(from: data)
             do {
                 try db.run("""
                     INSERT INTO entries (type, content, image_path, image_format, content_hash,
                                          created_at, last_used_at, size_bytes, is_pinned, use_count, source_app)
-                    VALUES ('image', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES ('image', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    [.text(relativePath), .text(ext), .text(hash),
+                    [ocrText.map(SQLValue.text) ?? .null, .text(relativePath), .text(ext), .text(hash),
                      .double(createdAt.timeIntervalSince1970), .double(lastUsedAt.timeIntervalSince1970),
                      .int(Int64(data.count)), .int(pinned ? 1 : 0), .int(Int64(max(1, useCount))),
                      sourceApp.map(SQLValue.text) ?? .null])
@@ -318,6 +320,12 @@ public actor ClipboardStore {
                 throw error
             }
         }
+    }
+
+    /// Updates the extracted OCR text for an image entry.
+    public func updateOCRText(for entryID: Int64, ocrText: String) throws {
+        try db.run("UPDATE entries SET content = ? WHERE id = ? AND type = 'image'",
+                   [.text(ocrText), .int(entryID)])
     }
 
     /// Must run inside a transaction started by the caller.
