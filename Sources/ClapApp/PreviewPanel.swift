@@ -206,17 +206,6 @@ struct PreviewView: View {
             GridRow {
                 metaLabel("Actions")
                 HStack(spacing: 8) {
-                    Button {
-                        copyID()
-                    } label: {
-                        Label(idCopied ? "Copied" : "Copy ID",
-                              systemImage: idCopied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Copy the numeric ID for CLI use, e.g. clap get \(entry.id)")
-
                     if (entry.type == .text || entry.type == .shell),
                        let content = entry.content, content.count <= 1000 {
                         Menu {
@@ -236,6 +225,17 @@ struct PreviewView: View {
                         .controlSize(.small)
                         .help("Convert text case and copy directly to clipboard")
                     }
+
+                    Button {
+                        copyID()
+                    } label: {
+                        Label(idCopied ? "Copied" : "Copy ID",
+                              systemImage: idCopied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Copy the numeric ID for CLI use, e.g. clap get \(entry.id)")
                 }
             }
             GridRow {
