@@ -22,10 +22,13 @@ struct EntryRow: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
             } else if let parsedColor = ColorParser.parse(entry.content) {
-                Circle()
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color(nsColor: parsedColor))
-                    .frame(width: 15, height: 15)
-                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.20), lineWidth: 1))
+                    .frame(width: 16, height: 16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.20), lineWidth: 1)
+                    )
                     .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 0.5)
             } else if JWTData.parse(entry.content) != nil {
                 Image(systemName: "key.horizontal.fill")
@@ -43,16 +46,6 @@ struct EntryRow: View {
                 .truncationMode(.tail)
                 .font(entry.type == .shell ? .system(size: 13, design: .monospaced) : .system(size: 14))
             Spacer(minLength: 8)
-            if entry.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.orange)
-            }
-            if entry.isFavorite {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.red)
-            }
             if let shortcut = entry.shortcut, !shortcut.isEmpty {
                 Text(shortcut)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -68,10 +61,22 @@ struct EntryRow: View {
                             )
                     )
             }
+            if entry.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.orange)
+            }
+            if entry.isFavorite {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.red)
+            }
             Text(RelativeTime.string(for: entry.lastUsedAt))
-                .font(.system(size: 12))
+                .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .frame(width: 48, alignment: .trailing)
+                .lineLimit(1)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 7.5)
@@ -763,16 +768,19 @@ struct ThumbnailView: View {
 // MARK: - Helpers
 
 enum RelativeTime {
-    private static let formatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter
-    }()
-
     static func string(for date: Date) -> String {
-        let interval = Date().timeIntervalSince(date)
+        let interval = max(0, Date().timeIntervalSince(date))
         if interval < 60 { return "now" }
-        return formatter.localizedString(for: date, relativeTo: Date())
+        let minutes = Int(interval / 60)
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        let days = hours / 24
+        if days < 30 { return "\(days)d ago" }
+        let months = days / 30
+        if months < 12 { return "\(months)mo ago" }
+        let years = days / 365
+        return "\(years)y ago"
     }
 }
 
