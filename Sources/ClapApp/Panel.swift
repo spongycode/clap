@@ -220,8 +220,14 @@ final class PanelController: NSObject, NSWindowDelegate {
             case "3":
                 appState.tab = .shell
                 return nil
+            case "4":
+                appState.tab = .favs
+                return nil
             case "p":
                 appState.togglePinSelected()
+                return nil
+            case "s", "b":
+                appState.toggleFavoriteSelected()
                 return nil
             case "r":
                 appState.regexMode.toggle()

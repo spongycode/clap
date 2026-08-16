@@ -38,6 +38,11 @@ struct EntryRow: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+            if entry.isFavorite {
+                Image(systemName: "heart.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
             Text(RelativeTime.string(for: entry.lastUsedAt))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -60,12 +65,13 @@ struct EntryRow: View {
         }
         .contextMenu {
             Button("Copy") { state.copy(entry) }
+            Button(entry.isFavorite ? "Remove from Favs" : "Add to Favs") { state.toggleFavorite(entry) }
             Button(entry.isPinned ? "Unpin" : "Pin") { state.togglePin(entry) }
             Divider()
             Button("Delete", role: .destructive) { state.delete(entry) }
         }
         .onAppear { state.loadMoreIfNeeded(entry) }
-        .id("\(entry.id)-\(entry.isPinned)")
+        .id("\(entry.id)-\(entry.isPinned)-\(entry.isFavorite)")
     }
 
     private var highlightedPreview: AttributedString {
@@ -241,14 +247,23 @@ struct MediaCell: View {
                 .frame(height: 110)
                 .clipped()
 
-            if entry.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                    .padding(5)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .padding(6)
+            HStack(spacing: 4) {
+                if entry.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .padding(5)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                if entry.isFavorite {
+                    Image(systemName: "heart.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .padding(5)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
             }
+            .padding(6)
 
             VStack {
                 Spacer()
@@ -293,12 +308,13 @@ struct MediaCell: View {
         }
         .contextMenu {
             Button("Copy") { state.copy(entry) }
+            Button(entry.isFavorite ? "Remove from Favs" : "Add to Favs") { state.toggleFavorite(entry) }
             Button(entry.isPinned ? "Unpin" : "Pin") { state.togglePin(entry) }
             Divider()
             Button("Delete", role: .destructive) { state.delete(entry) }
         }
         .onAppear { state.loadMoreIfNeeded(entry) }
-        .id("\(entry.id)-\(entry.isPinned)")
+        .id("\(entry.id)-\(entry.isPinned)-\(entry.isFavorite)")
     }
 }
 

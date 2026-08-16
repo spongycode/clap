@@ -13,6 +13,7 @@ public struct ClipboardEntry: Identifiable, Sendable, Equatable {
     public let lastUsedAt: Date
     public let sizeBytes: Int64
     public let isPinned: Bool
+    public let isFavorite: Bool
     public let useCount: Int
     public let sourceApp: String?
 }
@@ -25,17 +26,19 @@ public struct SearchQuery: Sendable {
     /// Used by the UI: the Classic tab shows text+image but not shell.
     public var types: Set<EntryType>?
     public var pinnedOnly: Bool
+    public var favoriteOnly: Bool
     public var limit: Int
     public var offset: Int
 
     public init(text: String? = nil, regex: String? = nil, type: EntryType? = nil,
                 types: Set<EntryType>? = nil,
-                pinnedOnly: Bool = false, limit: Int = 100, offset: Int = 0) {
+                pinnedOnly: Bool = false, favoriteOnly: Bool = false, limit: Int = 100, offset: Int = 0) {
         self.text = text
         self.regex = regex
         self.type = type
         self.types = types
         self.pinnedOnly = pinnedOnly
+        self.favoriteOnly = favoriteOnly
         self.limit = limit
         self.offset = offset
     }

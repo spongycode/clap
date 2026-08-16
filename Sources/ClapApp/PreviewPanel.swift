@@ -58,7 +58,7 @@ final class PreviewController {
             hide()
             return
         }
-        let stateKey = "\(entry.id)-\(entry.isPinned)-\(entry.useCount)-\(entry.lastUsedAt.timeIntervalSince1970)-\(appState.trimmedQuery)-\(appState.regexMode)"
+        let stateKey = "\(entry.id)-\(entry.isPinned)-\(entry.isFavorite)-\(entry.useCount)-\(entry.lastUsedAt.timeIntervalSince1970)-\(appState.trimmedQuery)-\(appState.regexMode)"
         if shownEntryKey != stateKey || preview.contentView == nil {
             shownEntryKey = stateKey
             preview.contentView = NSHostingView(
@@ -255,6 +255,14 @@ struct PreviewView: View {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 10))
                         .foregroundStyle(.orange)
+                }
+            }
+            if entry.isFavorite {
+                GridRow {
+                    metaLabel("Favorite")
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red)
                 }
             }
         }

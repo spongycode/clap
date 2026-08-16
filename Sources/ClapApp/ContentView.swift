@@ -43,14 +43,19 @@ struct ContentView: View {
                 regexToggle
 
                 Picker("", selection: $state.tab) {
-                    Text("Classic").tag(AppState.Tab.classic)
-                    Text("Media").tag(AppState.Tab.media)
-                    Text("Shell").tag(AppState.Tab.shell)
+                    Image(systemName: "doc.on.clipboard")
+                        .tag(AppState.Tab.classic)
+                    Image(systemName: "photo")
+                        .tag(AppState.Tab.media)
+                    Image(systemName: "terminal")
+                        .tag(AppState.Tab.shell)
+                    Image(systemName: "heart.fill")
+                        .tag(AppState.Tab.favs)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 230)
-                .help("⌘1 Classic · ⌘2 Media · ⌘3 Shell")
+                .frame(width: 148)
+                .help("⌘1 Classic · ⌘2 Media · ⌘3 Shell · ⌘4 Favs")
 
                 Button {
                     state.onOpenSettings?()
@@ -132,6 +137,7 @@ struct EmptyStateView: View {
         case .classic: return "doc.on.clipboard"
         case .media: return "photo.on.rectangle.angled"
         case .shell: return "terminal"
+        case .favs: return "star"
         }
     }
 
@@ -141,6 +147,7 @@ struct EmptyStateView: View {
         case .classic: return "No clipboard history yet"
         case .media: return "No image history yet"
         case .shell: return "No shell commands yet"
+        case .favs: return "No pinned favorites yet (press ⌘P to pin)"
         }
     }
 }

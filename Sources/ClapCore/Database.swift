@@ -196,6 +196,7 @@ final class Database {
         last_used_at  REAL NOT NULL,
         size_bytes    INTEGER NOT NULL,
         is_pinned     INTEGER NOT NULL DEFAULT 0,
+        is_favorite   INTEGER NOT NULL DEFAULT 0,
         use_count     INTEGER NOT NULL DEFAULT 1,
         source_app    TEXT
     );
@@ -232,7 +233,15 @@ final class Database {
     /// Idempotent schema creation; sets user_version = 1.
     func migrate() throws {
         try transaction {
+            // 1. Upgrade existing entries table if is_favorite is missing BEFORE creating index
+            let columns = try query("PRAGMA table_info(entries)", [], { row in row.text(1) ?? "" })
+            if !columns.isEmpty && !columns.contains("is_favorite") {
+                try exec("ALTER TABLE entries ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
+            }
+            // 2. Run schema SQL for tables/triggers/indexes
             try exec(Self.schemaSQL)
+            // 3. Ensure idx_entries_fav index exists
+            try exec("CREATE INDEX IF NOT EXISTS idx_entries_fav ON entries(is_favorite, last_used_at DESC)")
             try exec("PRAGMA user_version = 1")
         }
     }

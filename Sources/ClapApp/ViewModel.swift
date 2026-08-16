@@ -8,18 +8,17 @@ import os
 @MainActor
 final class AppState: ObservableObject {
 
-    enum Tab: Int {
-        case classic
-        case media
-        case shell
+    enum Tab: String, CaseIterable {
+        case classic, media, shell, favs
 
         /// Entry types this tab shows. Classic = clipboard only (text+image);
-        /// shell commands live in their own tab.
+        /// shell commands live in their own tab; favs shows all pinned entries.
         var types: Set<EntryType> {
             switch self {
             case .classic: return [.text, .image]
             case .media: return [.image]
             case .shell: return [.shell]
+            case .favs: return [.text, .image, .shell]
             }
         }
     }
@@ -125,6 +124,7 @@ final class AppState: ObservableObject {
         }
         // The tab constrains types unless the query already used `type:`.
         if query.type == nil { query.types = tab.types }
+        if tab == .favs { query.favoriteOnly = true }
         return query
     }
 
@@ -148,8 +148,10 @@ final class AppState: ObservableObject {
                         fetched = try await self.store.search(SearchQuery(types: [.text, .image], limit: Self.pageSize, offset: 0))
                     } else if currentTab == .media {
                         fetched = try await self.store.list(type: .image, limit: Self.pageSize, offset: 0)
-                    } else {
+                    } else if currentTab == .shell {
                         fetched = try await self.store.list(type: .shell, limit: Self.pageSize, offset: 0)
+                    } else { // .favs
+                        fetched = try await self.store.search(SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: 0))
                     }
                 }
                 guard gen == self.generation else { return }
@@ -201,8 +203,10 @@ final class AppState: ObservableObject {
                     fetched = try await self.store.search(SearchQuery(types: [.text, .image], limit: Self.pageSize, offset: offset))
                 } else if currentTab == .media {
                     fetched = try await self.store.list(type: .image, limit: Self.pageSize, offset: offset)
-                } else {
+                } else if currentTab == .shell {
                     fetched = try await self.store.list(type: .shell, limit: Self.pageSize, offset: offset)
+                } else { // .favs
+                    fetched = try await self.store.search(SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: offset))
                 }
                 guard gen == self.generation else { return }
                 self.fetchedCount += fetched.count
@@ -253,6 +257,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    func toggleFavoriteSelected() {
+        guard let entry = selectedEntry else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.store.setFavorite(!entry.isFavorite, id: entry.id)
+            IPC.post(.storeChanged)
+            self.reload()
+        }
+    }
+
     func deleteSelected() {
         guard let entry = selectedEntry else { return }
         let rows = flatRows
@@ -277,6 +291,11 @@ final class AppState: ObservableObject {
     func togglePin(_ entry: ClipboardEntry) {
         selectedID = entry.id
         togglePinSelected()
+    }
+
+    func toggleFavorite(_ entry: ClipboardEntry) {
+        selectedID = entry.id
+        toggleFavoriteSelected()
     }
 
     // MARK: - Copy to pasteboard
