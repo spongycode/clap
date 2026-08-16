@@ -8,7 +8,7 @@ import ClapCore
 /// extracted before command dispatch.
 @main
 struct ClapMain {
-    static let version = "0.1.0"
+    static let version = "0.1.1"
 
     static func main() async {
         var args = Array(CommandLine.arguments.dropFirst())

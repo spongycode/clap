@@ -60,18 +60,10 @@ struct ContentView: View {
                 // 4 Wide Custom Segmented Tabs
                 customTabBar
 
-                // Settings Button
-                Button {
+                // Settings Button (with circular hover highlight)
+                SettingsButton {
                     state.onOpenSettings?()
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help("Settings")
             }
             if let error = state.searchError {
                 Text(error)
@@ -84,13 +76,44 @@ struct ContentView: View {
         .padding(.vertical, 10)
     }
 
+    /// Settings gear button with circular hover highlight
+    private struct SettingsButton: View {
+        let action: () -> Void
+        @State private var isHovered = false
+
+        var body: some View {
+            Button(action: action) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 14))
+                    .foregroundStyle(isHovered ? Color.primary : Color.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(isHovered ? Color.primary.opacity(0.09) : Color.clear)
+                    )
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .help("Settings")
+        }
+    }
+
     /// Custom segmented tabs with wide clickable hit targets
     private var customTabBar: some View {
         HStack(spacing: 2) {
-            tabButton(icon: "doc.on.clipboard", tab: .classic, shortcut: "⌘1", label: "Classic")
-            tabButton(icon: "photo", tab: .media, shortcut: "⌘2", label: "Media")
-            tabButton(icon: "terminal", tab: .shell, shortcut: "⌘3", label: "Shell")
-            tabButton(icon: "heart.fill", tab: .favs, shortcut: "⌘4", label: "Favs")
+            TabButton(icon: "doc.on.clipboard", tab: .classic, currentTab: state.tab, shortcut: "⌘1", label: "Classic") {
+                state.tab = .classic
+            }
+            TabButton(icon: "photo", tab: .media, currentTab: state.tab, shortcut: "⌘2", label: "Media") {
+                state.tab = .media
+            }
+            TabButton(icon: "terminal", tab: .shell, currentTab: state.tab, shortcut: "⌘3", label: "Shell") {
+                state.tab = .shell
+            }
+            TabButton(icon: "heart.fill", tab: .favs, currentTab: state.tab, shortcut: "⌘4", label: "Favs") {
+                state.tab = .favs
+            }
         }
         .padding(2.5)
         .background(
@@ -99,47 +122,88 @@ struct ContentView: View {
         )
     }
 
-    private func tabButton(icon: String, tab: AppState.Tab, shortcut: String, label: String) -> some View {
-        Button {
-            state.tab = tab
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: state.tab == tab ? .bold : .medium))
-                .foregroundStyle(state.tab == tab ? Color.white : Color.secondary)
-                .frame(width: 48, height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(state.tab == tab ? Color.accentColor : Color.clear)
-                        .shadow(color: state.tab == tab ? Color.accentColor.opacity(0.3) : Color.clear, radius: 2, y: 1)
-                )
+    /// Individual tab item with full-area hit testing and distinct hover highlight
+    private struct TabButton: View {
+        let icon: String
+        let tab: AppState.Tab
+        let currentTab: AppState.Tab
+        let shortcut: String
+        let label: String
+        let action: () -> Void
+
+        @State private var isHovered = false
+
+        private var isSelected: Bool {
+            currentTab == tab
         }
-        .buttonStyle(.plain)
-        .help("\(label) (\(shortcut))")
+
+        var body: some View {
+            Button(action: action) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: isSelected ? .bold : (isHovered ? .semibold : .medium)))
+                    .foregroundStyle(
+                        isSelected ? Color.white : (isHovered ? Color.primary : Color.secondary)
+                    )
+                    .frame(width: 50, height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(
+                                isSelected ? Color.accentColor : (isHovered ? Color.primary.opacity(0.09) : Color.clear)
+                            )
+                            .shadow(color: isSelected ? Color.accentColor.opacity(0.3) : Color.clear, radius: 2, y: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .help("\(label) (\(shortcut))")
+        }
     }
 
-    /// Regex on/off toggle (also ⌘R). Styled like modern IDE search toggles
-    /// with subtle tinted fill and matte green text.
+    /// Regex on/off toggle with hover highlight and active state
     private var regexToggle: some View {
-        Button {
-            state.regexMode.toggle()
-        } label: {
-            Text(".*")
-                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(state.regexMode ? Color.green : Color.secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(state.regexMode ? Color.green.opacity(0.16) : Color.primary.opacity(0.06))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(state.regexMode ? Color.green.opacity(0.32) : Color.clear, lineWidth: 0.5)
-                )
+        RegexToggle(isOn: $state.regexMode)
+    }
+
+    private struct RegexToggle: View {
+        @Binding var isOn: Bool
+        @State private var isHovered = false
+
+        var body: some View {
+            Button {
+                isOn.toggle()
+            } label: {
+                Text(".*")
+                    .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(
+                        isOn ? Color.green : (isHovered ? Color.primary : Color.secondary)
+                    )
+                    .padding(.horizontal, 5.5)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                isOn
+                                    ? Color.green.opacity(isHovered ? 0.24 : 0.16)
+                                    : (isHovered ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06))
+                            )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(
+                                isOn
+                                    ? Color.green.opacity(isHovered ? 0.5 : 0.32)
+                                    : (isHovered ? Color.primary.opacity(0.15) : Color.clear),
+                                lineWidth: 0.5
+                            )
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.borderless)
+            .onHover { isHovered = $0 }
+            .help(isOn ? "Regex search on (⌘R to turn off)"
+                       : "Regex search off (⌘R to turn on)")
         }
-        .buttonStyle(.borderless)
-        .help(state.regexMode ? "Regex search on (⌘R to turn off)"
-                              : "Regex search off (⌘R to turn on)")
     }
 
     // MARK: - Content
