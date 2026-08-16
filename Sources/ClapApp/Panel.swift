@@ -17,8 +17,8 @@ final class ClapPanel: NSPanel {
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
 
-    static let panelSize = NSSize(width: 720, height: 480)
-    static let minPanelSize = NSSize(width: 480, height: 320)
+    static let panelSize = NSSize(width: 780, height: 520)
+    static let minPanelSize = NSSize(width: 520, height: 360)
     private static let frameConfigKey = "ui.panel_frame"
 
     private let panel: ClapPanel

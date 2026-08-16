@@ -364,6 +364,27 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Writes transformed text to clipboard, captures it as a new entry,
+    /// closes the panel, and optionally pastes it to the frontmost app.
+    func copyTransformedText(_ text: String) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            _ = try? await self.store.captureText(text, sourceApp: "clap")
+            IPC.post(.storeChanged)
+            self.reload()
+            self.onCloseRequest?()
+
+            let pasteEnabled = ((try? await self.store.config("paste.on_copy")) ?? "1") == "1"
+            if pasteEnabled {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                Paster.pasteToFrontmostApp()
+            }
+        }
+    }
+
     // MARK: - Thumbnails
 
     /// Loads (and lazily generates) the thumbnail for an image entry,

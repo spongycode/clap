@@ -11,45 +11,45 @@ struct EntryRow: View {
     private var isSelected: Bool { state.selectedID == entry.id }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 11) {
             if entry.type == .image {
                 ThumbnailView(entry: entry)
-                    .frame(width: 40, height: 28)
+                    .frame(width: 44, height: 30)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             } else if entry.type == .shell {
                 Image(systemName: "terminal")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 18)
+                    .frame(width: 20)
             } else if let parsedColor = ColorParser.parse(entry.content) {
                 Circle()
                     .fill(Color(nsColor: parsedColor))
-                    .frame(width: 14, height: 14)
+                    .frame(width: 15, height: 15)
                     .overlay(Circle().strokeBorder(Color.primary.opacity(0.20), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 0.5)
             }
             Text(highlightedPreview)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .font(entry.type == .shell ? .system(size: 12, design: .monospaced) : .system(size: 13))
+                .font(entry.type == .shell ? .system(size: 13, design: .monospaced) : .system(size: 14))
             Spacer(minLength: 8)
             if entry.isPinned {
                 Image(systemName: "pin.fill")
-                    .font(.caption)
+                    .font(.system(size: 12.5))
                     .foregroundStyle(.orange)
             }
             if entry.isFavorite {
                 Image(systemName: "heart.fill")
-                    .font(.caption)
+                    .font(.system(size: 12.5))
                     .foregroundStyle(.red)
             }
             Text(RelativeTime.string(for: entry.lastUsedAt))
-                .font(.caption)
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7.5)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(isSelected ? Color.accentColor.opacity(0.36) : Color.clear)
@@ -65,6 +65,17 @@ struct EntryRow: View {
         }
         .contextMenu {
             Button("Copy") { state.copy(entry) }
+            if (entry.type == .text || entry.type == .shell),
+               let content = entry.content, content.count <= 1000 {
+                Menu("Copy As") {
+                    ForEach(CaseConverter.CaseStyle.allCases) { style in
+                        Button(style.rawValue) {
+                            let converted = CaseConverter.convert(content, to: style)
+                            state.copyTransformedText(converted)
+                        }
+                    }
+                }
+            }
             Button(entry.isFavorite ? "Remove from Favs" : "Add to Favs") { state.toggleFavorite(entry) }
             Button(entry.isPinned ? "Unpin" : "Pin") { state.togglePin(entry) }
             Divider()
@@ -181,6 +192,99 @@ enum ColorParser {
         }
 
         return nil
+    }
+}
+
+// MARK: - Text case converter
+
+enum CaseConverter {
+    enum CaseStyle: String, CaseIterable, Identifiable {
+        case camelCase = "camelCase"
+        case pascalCase = "PascalCase"
+        case snakeCase = "snake_case"
+        case kebabCase = "kebab-case"
+        case constantCase = "CONSTANT_CASE"
+        case uppercase = "UPPERCASE"
+        case lowercase = "lowercase"
+        case titleCase = "Title Case"
+
+        var id: String { rawValue }
+    }
+
+    static func convert(_ text: String, to style: CaseStyle) -> String {
+        let words = splitWords(text)
+        guard !words.isEmpty else {
+            switch style {
+            case .uppercase: return text.uppercased()
+            case .lowercase: return text.lowercased()
+            default: return text
+            }
+        }
+
+        switch style {
+        case .camelCase:
+            let first = words[0].lowercased()
+            let rest = words.dropFirst().map { $0.capitalized }
+            return ([first] + rest).joined()
+
+        case .pascalCase:
+            return words.map { $0.capitalized }.joined()
+
+        case .snakeCase:
+            return words.map { $0.lowercased() }.joined(separator: "_")
+
+        case .kebabCase:
+            return words.map { $0.lowercased() }.joined(separator: "-")
+
+        case .constantCase:
+            return words.map { $0.uppercased() }.joined(separator: "_")
+
+        case .uppercase:
+            return text.uppercased()
+
+        case .lowercase:
+            return text.lowercased()
+
+        case .titleCase:
+            return words.map { $0.capitalized }.joined(separator: " ")
+        }
+    }
+
+    private static func splitWords(_ text: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+
+        func flush() {
+            if !current.isEmpty {
+                words.append(current)
+                current = ""
+            }
+        }
+
+        let chars = Array(text)
+        for i in 0..<chars.count {
+            let ch = chars[i]
+            if ch.isLetter {
+                if ch.isUppercase {
+                    let prevIsLower = (i > 0 && chars[i-1].isLowercase)
+                    let nextIsLower = (i + 1 < chars.count && chars[i+1].isLowercase && current.count > 1)
+                    if prevIsLower || nextIsLower {
+                        flush()
+                    }
+                }
+                current.append(ch)
+            } else if ch.isNumber {
+                let prevIsLetter = (i > 0 && chars[i-1].isLetter)
+                if prevIsLetter {
+                    flush()
+                }
+                current.append(ch)
+            } else {
+                flush()
+            }
+        }
+        flush()
+        return words
     }
 }
 

@@ -31,13 +31,14 @@ struct ContentView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
+            HStack(spacing: 11) {
                 Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15))
                     .foregroundStyle(.secondary)
                 TextField(state.regexMode ? "Regex search…" : "Search…",
                           text: $state.rawQuery)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
+                    .font(.system(size: 16))
                     .focused($searchFocused)
 
                 regexToggle
@@ -54,7 +55,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 148)
+                .frame(width: 156)
                 .help("⌘1 Classic · ⌘2 Media · ⌘3 Shell · ⌘4 Favs")
 
                 Button {
@@ -74,8 +75,8 @@ struct ContentView: View {
                     .padding(.leading, 26)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
 
     /// Regex on/off toggle (also ⌘R). Styled like the ".*" button in editor
@@ -85,10 +86,10 @@ struct ContentView: View {
             state.regexMode.toggle()
         } label: {
             Text(".*")
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
                 .foregroundStyle(state.regexMode ? Color.white : Color.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3.5)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
                         .fill(state.regexMode ? Color.accentColor : Color.primary.opacity(0.08))
