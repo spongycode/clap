@@ -58,7 +58,7 @@ final class PreviewController {
             hide()
             return
         }
-        let stateKey = "\(entry.id)-\(entry.isPinned)-\(entry.useCount)-\(entry.lastUsedAt.timeIntervalSince1970)"
+        let stateKey = "\(entry.id)-\(entry.isPinned)-\(entry.useCount)-\(entry.lastUsedAt.timeIntervalSince1970)-\(appState.trimmedQuery)-\(appState.regexMode)"
         if shownEntryKey != stateKey || preview.contentView == nil {
             shownEntryKey = stateKey
             preview.contentView = NSHostingView(
@@ -142,7 +142,7 @@ struct PreviewView: View {
     private var contentSection: some View {
         if entry.type == .text || entry.type == .shell {
             ScrollView([.vertical]) {
-                Text(displayedText)
+                Text(highlightedDisplayedText)
                     .font(.system(size: 12, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -228,6 +228,14 @@ struct PreviewView: View {
                 }
             }
         }
+    }
+
+    private var highlightedDisplayedText: AttributedString {
+        SearchHighlighter.highlight(
+            text: displayedText,
+            query: state.trimmedQuery,
+            isRegex: state.regexMode
+        )
     }
 
     private var displayedText: String {

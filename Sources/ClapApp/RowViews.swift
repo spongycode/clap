@@ -22,7 +22,7 @@ struct EntryRow: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 18)
             }
-            Text(preview)
+            Text(highlightedPreview)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .font(entry.type == .shell ? .system(size: 12, design: .monospaced) : .system(size: 13))
@@ -41,7 +41,11 @@ struct EntryRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.clear)
+                .fill(isSelected ? Color.accentColor.opacity(0.36) : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(isSelected ? Color.accentColor.opacity(0.45) : Color.clear, lineWidth: 0.5)
+                )
         )
         .contentShape(Rectangle())
         .onTapGesture { state.copy(entry) }
@@ -58,6 +62,14 @@ struct EntryRow: View {
         .id("\(entry.id)-\(entry.isPinned)")
     }
 
+    private var highlightedPreview: AttributedString {
+        SearchHighlighter.highlight(
+            text: preview,
+            query: state.trimmedQuery,
+            isRegex: state.regexMode
+        )
+    }
+
     private var preview: String {
         switch entry.type {
         case .text, .shell:
@@ -71,6 +83,54 @@ struct EntryRow: View {
             let format = entry.imageFormat?.uppercased() ?? "IMAGE"
             return "\(format) image · \(ByteSize.format(entry.sizeBytes))"
         }
+    }
+}
+
+// MARK: - Search match highlighter
+
+enum SearchHighlighter {
+    static func highlight(
+        text: String,
+        query: String,
+        isRegex: Bool,
+        highlightColor: Color = Color(red: 1.0, green: 0.88, blue: 0.15)
+    ) -> AttributedString {
+        var attributed = AttributedString(text)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return attributed }
+
+        if isRegex {
+            guard let regex = try? NSRegularExpression(pattern: trimmed, options: [.caseInsensitive]) else {
+                return attributed
+            }
+            let nsString = text as NSString
+            let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsString.length))
+            for match in matches {
+                if let swiftRange = Range(match.range, in: text),
+                   let attrRange = Range(swiftRange, in: attributed) {
+                    attributed[attrRange].backgroundColor = highlightColor
+                    attributed[attrRange].foregroundColor = .black
+                }
+            }
+        } else {
+            let tokens = trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+            for token in tokens {
+                var searchRange = text.startIndex..<text.endIndex
+                while let matchRange = text.range(of: token, options: .caseInsensitive, range: searchRange) {
+                    if let attrRange = Range(matchRange, in: attributed) {
+                        attributed[attrRange].backgroundColor = highlightColor
+                        attributed[attrRange].foregroundColor = .black
+                    }
+                    if matchRange.upperBound < text.endIndex {
+                        searchRange = matchRange.upperBound..<text.endIndex
+                    } else {
+                        break
+                    }
+                }
+            }
+        }
+
+        return attributed
     }
 }
 
