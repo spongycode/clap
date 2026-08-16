@@ -25,77 +25,116 @@ struct ContentView: View {
         )
         .onAppear { searchFocused = true }
         .onChange(of: state.searchFocusToken) { _, _ in searchFocused = true }
-        .sheet(item: $state.editingShortcutEntry) { entry in
-            ShortcutSheet(entry: entry)
-        }
     }
 
     // MARK: - Header (search + tabs + gear)
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 11) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
-                TextField(state.regexMode ? "Regex search…" : "Search…",
-                          text: $state.rawQuery)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 16))
-                    .focused($searchFocused)
+            HStack(spacing: 10) {
+                // Search Input Capsule
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
 
-                regexToggle
+                    TextField(state.regexMode ? "Regex search…" : "Search…",
+                              text: $state.rawQuery)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .focused($searchFocused)
 
-                Picker("", selection: $state.tab) {
-                    Image(systemName: "doc.on.clipboard")
-                        .tag(AppState.Tab.classic)
-                    Image(systemName: "photo")
-                        .tag(AppState.Tab.media)
-                    Image(systemName: "terminal")
-                        .tag(AppState.Tab.shell)
-                    Image(systemName: "heart.fill")
-                        .tag(AppState.Tab.favs)
+                    regexToggle
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 156)
-                .help("⌘1 Classic · ⌘2 Media · ⌘3 Shell · ⌘4 Favs")
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                        )
+                )
 
+                // 4 Wide Custom Segmented Tabs
+                customTabBar
+
+                // Settings Button
                 Button {
                     state.onOpenSettings?()
                 } label: {
                     Image(systemName: "gearshape")
-                        .imageScale(.large)
+                        .font(.system(size: 14))
                         .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .help("Settings")
             }
             if let error = state.searchError {
                 Text(error)
                     .font(.caption)
                     .foregroundColor(.red)
-                    .padding(.leading, 26)
+                    .padding(.leading, 12)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
-    /// Regex on/off toggle (also ⌘R). Styled like the ".*" button in editor
-    /// search fields: tinted when active.
+    /// Custom segmented tabs with wide clickable hit targets
+    private var customTabBar: some View {
+        HStack(spacing: 2) {
+            tabButton(icon: "doc.on.clipboard", tab: .classic, shortcut: "⌘1", label: "Classic")
+            tabButton(icon: "photo", tab: .media, shortcut: "⌘2", label: "Media")
+            tabButton(icon: "terminal", tab: .shell, shortcut: "⌘3", label: "Shell")
+            tabButton(icon: "heart.fill", tab: .favs, shortcut: "⌘4", label: "Favs")
+        }
+        .padding(2.5)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+    }
+
+    private func tabButton(icon: String, tab: AppState.Tab, shortcut: String, label: String) -> some View {
+        Button {
+            state.tab = tab
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: state.tab == tab ? .bold : .medium))
+                .foregroundStyle(state.tab == tab ? Color.white : Color.secondary)
+                .frame(width: 48, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(state.tab == tab ? Color.accentColor : Color.clear)
+                        .shadow(color: state.tab == tab ? Color.accentColor.opacity(0.3) : Color.clear, radius: 2, y: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("\(label) (\(shortcut))")
+    }
+
+    /// Regex on/off toggle (also ⌘R). Styled like modern IDE search toggles
+    /// with subtle tinted fill and matte green text.
     private var regexToggle: some View {
         Button {
             state.regexMode.toggle()
         } label: {
             Text(".*")
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                .foregroundStyle(state.regexMode ? Color.white : Color.secondary)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3.5)
+                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(state.regexMode ? Color.green : Color.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(state.regexMode ? Color.accentColor : Color.primary.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(state.regexMode ? Color.green.opacity(0.16) : Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(state.regexMode ? Color.green.opacity(0.32) : Color.clear, lineWidth: 0.5)
                 )
         }
         .buttonStyle(.borderless)
@@ -222,91 +261,5 @@ struct MediaGridView: View {
                 if let id, !state.selectionCameFromPointer { proxy.scrollTo(id) }
             }
         }
-    }
-}
-
-// MARK: - Shortcut configuration sheet
-
-struct ShortcutSheet: View {
-    @EnvironmentObject private var state: AppState
-    let entry: ClipboardEntry
-    @State private var text: String = ""
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: "keyboard")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.indigo)
-                Text("Snippet Abbreviation")
-                    .font(.system(size: 14, weight: .bold))
-                Spacer()
-            }
-
-            Text("Type this abbreviation anywhere on your Mac to automatically expand this snippet:")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-
-            HStack {
-                Text("Trigger Keyword:")
-                    .font(.system(size: 12, weight: .medium))
-                TextField("e.g. ;email or !zoom", text: $text)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 13, design: .monospaced))
-                    .focused($isFocused)
-                    .onSubmit {
-                        save()
-                    }
-            }
-
-            if let content = entry.content {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Expands to:")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text(content.prefix(160))
-                        .font(.system(size: 11, design: .monospaced))
-                        .lineLimit(3)
-                        .foregroundStyle(.secondary)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.primary.opacity(0.04))
-                        )
-                }
-            }
-
-            HStack {
-                if entry.shortcut != nil {
-                    Button("Remove", role: .destructive) {
-                        state.setShortcut(nil, for: entry)
-                        state.editingShortcutEntry = nil
-                    }
-                }
-                Spacer()
-                Button("Cancel") {
-                    state.editingShortcutEntry = nil
-                }
-                Button("Save") {
-                    save()
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(18)
-        .frame(width: 380)
-        .onAppear {
-            text = entry.shortcut ?? ""
-            isFocused = true
-        }
-    }
-
-    private func save() {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        state.setShortcut(trimmed.isEmpty ? nil : trimmed, for: entry)
-        state.editingShortcutEntry = nil
     }
 }

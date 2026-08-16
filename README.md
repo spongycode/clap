@@ -22,7 +22,7 @@
 - **Instant** — Hash-indexed dedup, SQLite WAL + FTS5 search, virtualized SwiftUI list, thumbnail cache.
 - **Keyboard-first & Fast** — `⌘⇧V` opens the panel; single click or `Enter` copies, closes, and pastes directly.
 - **Screenshot OCR & Search** — Apple Vision extracts text from screenshots in the background; search inside images (`⌘F`) or copy text with one click.
-- **Global Snippet Expansion (Text Expander)** — Assign short trigger abbreviations (e.g. `;email`, `;zid`, `!addr`) to saved snippets; automatically expands as you type anywhere on your Mac.
+- **Global Snippet Expansion** — Assign trigger abbreviations (e.g. `;email`, `!zoom`, `brb`) to saved snippets to auto-expand them anywhere as you type.
 - **Permanent Favorites & Snippets** — Bookmark canned replies, email signatures, code snippets, and commands (`⌘S` / `⌘4`).
 - **Developer Smart Cards** — Automatic previews and one-click actions for Base64, URL encoding, JWT tokens, and Unix timestamps.
 - **Text Case & Encoding Transforms** — Convert text on the fly (`camelCase`, `snake_case`, Base64, URL encode/decode).
@@ -118,7 +118,7 @@ Press **⌘⇧V** to open the panel (configurable in Settings to `⌘⇧B`, `⌘
 
 - **Hover Selection**: Hovering over any row selects it and opens a rich preview (scrollable text/command, high-res image with extracted OCR text, color swatch, JWT inspector, or Unix timestamp card).
 - **Copy As… & Transforms**: Click "Copy as…" in the preview popup or right-click any entry to copy recognized text from images, convert text cases, encode/decode Base64 or URLs, copy decoded JWT JSON, or format Unix timestamps.
-- **Snippet Abbreviations**: Assign custom trigger abbreviations (e.g. `;email`, `;zid`) to any text snippet via right-click or the preview panel. Typing the abbreviation anywhere on macOS automatically expands it into the full snippet!
+- **Snippet Abbreviations**: Assign trigger abbreviations (e.g. `;email`, `!zoom`, `brb`) via right-click or preview to auto-expand snippets as you type.
 - **Direct Paste**: Pastes straight into your frontmost application (requires Accessibility permission prompted on first launch).
 - **Move & Resize**: Drag the panel background to reposition and drag edges to resize. Position and dimensions persist across restarts.
 

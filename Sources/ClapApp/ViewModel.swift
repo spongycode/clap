@@ -58,8 +58,6 @@ final class AppState: ObservableObject {
     @Published private(set) var searchError: String?
     /// Incremented to move keyboard focus into the search field.
     @Published var searchFocusToken = 0
-    /// Entry currently having its shortcut edited in the sheet.
-    @Published var editingShortcutEntry: ClipboardEntry?
 
     static let pageSize = 100
 
@@ -302,7 +300,7 @@ final class AppState: ObservableObject {
     }
 
     func promptSetShortcut(_ entry: ClipboardEntry) {
-        editingShortcutEntry = entry
+        SnippetWindowController.shared.show(for: entry, state: self)
     }
 
     func setShortcut(_ shortcut: String?, for entry: ClipboardEntry) {

@@ -110,7 +110,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Clap")
                             .font(.title2.weight(.bold))
-                        Text("Local-first clipboard & shell history manager · v0.0.2")
+                        Text("Local-first clipboard & shell history manager · v0.1.0")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
