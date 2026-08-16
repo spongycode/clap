@@ -243,6 +243,120 @@ struct PreviewView: View {
                         )
                     }
 
+                    if let content = entry.content, let jwt = JWTData.parse(content) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "key.horizontal.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.indigo)
+                                Text("JWT Inspector")
+                                    .font(.system(size: 12.5, weight: .bold))
+                                    .foregroundStyle(.primary)
+
+                                Text(jwt.algorithm)
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.primary.opacity(0.08))
+                                    )
+
+                                if let isExp = jwt.isExpired {
+                                    HStack(spacing: 3) {
+                                        Circle()
+                                            .fill(isExp ? Color.red : Color.green)
+                                            .frame(width: 6, height: 6)
+                                        Text(isExp ? "Expired" : "Valid")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(isExp ? .red : .green)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill((isExp ? Color.red : Color.green).opacity(0.12))
+                                    )
+                                }
+
+                                Spacer()
+
+                                Menu {
+                                    Button("Copy Payload JSON") {
+                                        state.copyTransformedText(jwt.payloadJSON)
+                                    }
+                                    Button("Copy Header JSON") {
+                                        state.copyTransformedText(jwt.headerJSON)
+                                    }
+                                } label: {
+                                    Label("Copy JSON", systemImage: "doc.on.doc")
+                                        .font(.system(size: 10))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+
+                            if jwt.subject != nil || jwt.issuer != nil || jwt.expirationDate != nil {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    if let sub = jwt.subject {
+                                        HStack(spacing: 6) {
+                                            Text("Subject:")
+                                                .font(.system(size: 10.5, weight: .medium))
+                                                .foregroundStyle(.secondary)
+                                            Text(sub)
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    if let iss = jwt.issuer {
+                                        HStack(spacing: 6) {
+                                            Text("Issuer:")
+                                                .font(.system(size: 10.5, weight: .medium))
+                                                .foregroundStyle(.secondary)
+                                            Text(iss)
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    if let expDate = jwt.expirationDate {
+                                        HStack(spacing: 6) {
+                                            Text("Expires:")
+                                                .font(.system(size: 10.5, weight: .medium))
+                                                .foregroundStyle(.secondary)
+                                            Text(Self.dateFormatter.string(from: expDate))
+                                                .font(.system(size: 11))
+                                        }
+                                    }
+                                }
+                            }
+
+                            Divider()
+
+                            Text("Decoded Payload:")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(.secondary)
+
+                            Text(jwt.payloadJSON)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(Color.primary.opacity(0.04))
+                                )
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.indigo.opacity(0.06))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(Color.indigo.opacity(0.18), lineWidth: 1)
+                                )
+                        )
+                    }
+
                     Text(highlightedDisplayedText)
                         .font(.system(size: 13, design: .monospaced))
                         .textSelection(.enabled)
@@ -281,6 +395,16 @@ struct PreviewView: View {
                     if (entry.type == .text || entry.type == .shell),
                        let content = entry.content, content.count <= 10_000 {
                         Menu {
+                            if let jwt = JWTData.parse(content) {
+                                Section("JWT Token") {
+                                    Button("Copy Payload JSON") {
+                                        state.copyTransformedText(jwt.payloadJSON)
+                                    }
+                                    Button("Copy Header JSON") {
+                                        state.copyTransformedText(jwt.headerJSON)
+                                    }
+                                }
+                            }
                             if content.count <= 1000 {
                                 Section("Text Case") {
                                     ForEach(CaseConverter.CaseStyle.allCases) { style in

@@ -27,6 +27,11 @@ struct EntryRow: View {
                     .frame(width: 15, height: 15)
                     .overlay(Circle().strokeBorder(Color.primary.opacity(0.20), lineWidth: 1))
                     .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 0.5)
+            } else if JWTData.parse(entry.content) != nil {
+                Image(systemName: "key.horizontal.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.indigo)
+                    .frame(width: 18)
             }
             Text(highlightedPreview)
                 .lineLimit(1)
@@ -68,6 +73,16 @@ struct EntryRow: View {
             if (entry.type == .text || entry.type == .shell),
                let content = entry.content, content.count <= 10_000 {
                 Menu("Copy As") {
+                    if let jwt = JWTData.parse(content) {
+                        Section("JWT Token") {
+                            Button("Copy Payload JSON") {
+                                state.copyTransformedText(jwt.payloadJSON)
+                            }
+                            Button("Copy Header JSON") {
+                                state.copyTransformedText(jwt.headerJSON)
+                            }
+                        }
+                    }
                     if content.count <= 1000 {
                         Section("Text Case") {
                             ForEach(CaseConverter.CaseStyle.allCases) { style in
@@ -344,6 +359,99 @@ enum TextTransformer {
     static func encodeURL(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+    }
+}
+
+// MARK: - JWT Parser & Inspector
+
+struct JWTData {
+    let header: [String: Any]
+    let payload: [String: Any]
+    let headerJSON: String
+    let payloadJSON: String
+    let algorithm: String
+    let isExpired: Bool?
+    let expirationDate: Date?
+    let issuedAtDate: Date?
+    let subject: String?
+    let issuer: String?
+
+    static func parse(_ text: String?) -> JWTData? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 20, trimmed.count <= 20_000 else { return nil }
+        let parts = trimmed.components(separatedBy: ".")
+        guard parts.count == 3 else { return nil }
+
+        guard let headerObj = decodeBase64URLJSON(parts[0]),
+              let payloadObj = decodeBase64URLJSON(parts[1]) else {
+            return nil
+        }
+
+        let alg = (headerObj["alg"] as? String) ?? "Unknown"
+        let typ = (headerObj["typ"] as? String)?.uppercased()
+        guard headerObj["alg"] != nil || typ == "JWT" else {
+            return nil
+        }
+
+        let headerData = (try? JSONSerialization.data(withJSONObject: headerObj, options: [.prettyPrinted, .sortedKeys])) ?? Data()
+        let payloadData = (try? JSONSerialization.data(withJSONObject: payloadObj, options: [.prettyPrinted, .sortedKeys])) ?? Data()
+
+        let headerStr = String(data: headerData, encoding: .utf8) ?? "{}"
+        let payloadStr = String(data: payloadData, encoding: .utf8) ?? "{}"
+
+        var expDate: Date? = nil
+        var isExp: Bool? = nil
+        if let expNum = payloadObj["exp"] as? Double {
+            let date = Date(timeIntervalSince1970: expNum)
+            expDate = date
+            isExp = date < Date()
+        } else if let expInt = payloadObj["exp"] as? Int64 {
+            let date = Date(timeIntervalSince1970: Double(expInt))
+            expDate = date
+            isExp = date < Date()
+        } else if let expInt = payloadObj["exp"] as? Int {
+            let date = Date(timeIntervalSince1970: Double(expInt))
+            expDate = date
+            isExp = date < Date()
+        }
+
+        var iatDate: Date? = nil
+        if let iatNum = payloadObj["iat"] as? Double {
+            iatDate = Date(timeIntervalSince1970: iatNum)
+        } else if let iatInt = payloadObj["iat"] as? Int64 {
+            iatDate = Date(timeIntervalSince1970: Double(iatInt))
+        } else if let iatInt = payloadObj["iat"] as? Int {
+            iatDate = Date(timeIntervalSince1970: Double(iatInt))
+        }
+
+        return JWTData(
+            header: headerObj,
+            payload: payloadObj,
+            headerJSON: headerStr,
+            payloadJSON: payloadStr,
+            algorithm: alg,
+            isExpired: isExp,
+            expirationDate: expDate,
+            issuedAtDate: iatDate,
+            subject: payloadObj["sub"] as? String,
+            issuer: payloadObj["iss"] as? String
+        )
+    }
+
+    private static func decodeBase64URLJSON(_ base64URL: String) -> [String: Any]? {
+        var base64 = base64URL
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 {
+            base64.append("=")
+        }
+        guard let data = Data(base64Encoded: base64),
+              let json = try? JSONSerialization.jsonObject(with: data, options: []),
+              let dict = json as? [String: Any] else {
+            return nil
+        }
+        return dict
     }
 }
 
