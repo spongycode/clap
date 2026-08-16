@@ -121,15 +121,20 @@ enum QueryTokenizer {
 
         for ch in s {
             if ch == "\"" {
-                flush(quoted: inQuotes)
-                inQuotes.toggle()
+                if inQuotes {
+                    flush(quoted: true)
+                    inQuotes = false
+                } else {
+                    flush(quoted: false)
+                    inQuotes = true
+                }
             } else if ch.isWhitespace && !inQuotes {
                 flush(quoted: false)
             } else {
                 current.append(ch)
             }
         }
-        flush(quoted: inQuotes) // unterminated quote: treat remainder as phrase
+        flush(quoted: false) // unterminated quote: treat as in-progress prefix query
         return tokens
     }
 }

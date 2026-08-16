@@ -142,11 +142,41 @@ struct PreviewView: View {
     private var contentSection: some View {
         if entry.type == .text || entry.type == .shell {
             ScrollView([.vertical]) {
-                Text(highlightedDisplayedText)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(12)
+                VStack(alignment: .leading, spacing: 12) {
+                    if let parsedColor = ColorParser.parse(entry.content) {
+                        HStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color(nsColor: parsedColor))
+                                .frame(width: 42, height: 42)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
+                                )
+                                .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Color Preview")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                Text(entry.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.04))
+                        )
+                    }
+
+                    Text(highlightedDisplayedText)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .padding(12)
             }
         } else {
             ZStack {

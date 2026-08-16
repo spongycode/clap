@@ -21,6 +21,12 @@ struct EntryRow: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 18)
+            } else if let parsedColor = ColorParser.parse(entry.content) {
+                Circle()
+                    .fill(Color(nsColor: parsedColor))
+                    .frame(width: 14, height: 14)
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.20), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 0.5)
             }
             Text(highlightedPreview)
                 .lineLimit(1)
@@ -83,6 +89,92 @@ struct EntryRow: View {
             let format = entry.imageFormat?.uppercased() ?? "IMAGE"
             return "\(format) image · \(ByteSize.format(entry.sizeBytes))"
         }
+    }
+}
+
+// MARK: - Color code parser
+
+enum ColorParser {
+    static func parse(_ raw: String?) -> NSColor? {
+        guard let raw else { return nil }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count >= 4 && text.count <= 40 else { return nil }
+
+        // Hex formats: #RGB, #RGBA, #RRGGBB, #RRGGBBAA, 0xRRGGBB
+        if text.hasPrefix("#") || text.hasPrefix("0x") {
+            let hex = text.hasPrefix("#") ? String(text.dropFirst()) : String(text.dropFirst(2))
+            guard let intVal = UInt64(hex, radix: 16) else { return nil }
+            switch hex.count {
+            case 3: // RGB
+                let r = CGFloat((intVal >> 8) & 0xF) / 15.0
+                let g = CGFloat((intVal >> 4) & 0xF) / 15.0
+                let b = CGFloat(intVal & 0xF) / 15.0
+                return NSColor(red: r, green: g, blue: b, alpha: 1.0)
+            case 4: // RGBA
+                let r = CGFloat((intVal >> 12) & 0xF) / 15.0
+                let g = CGFloat((intVal >> 8) & 0xF) / 15.0
+                let b = CGFloat((intVal >> 4) & 0xF) / 15.0
+                let a = CGFloat(intVal & 0xF) / 15.0
+                return NSColor(red: r, green: g, blue: b, alpha: a)
+            case 6: // RRGGBB
+                let r = CGFloat((intVal >> 16) & 0xFF) / 255.0
+                let g = CGFloat((intVal >> 8) & 0xFF) / 255.0
+                let b = CGFloat(intVal & 0xFF) / 255.0
+                return NSColor(red: r, green: g, blue: b, alpha: 1.0)
+            case 8: // RRGGBBAA
+                let r = CGFloat((intVal >> 24) & 0xFF) / 255.0
+                let g = CGFloat((intVal >> 16) & 0xFF) / 255.0
+                let b = CGFloat((intVal >> 8) & 0xFF) / 255.0
+                let a = CGFloat(intVal & 0xFF) / 255.0
+                return NSColor(red: r, green: g, blue: b, alpha: a)
+            default:
+                return nil
+            }
+        }
+
+        let lower = text.lowercased()
+        // rgb(...) or rgba(...)
+        if lower.hasPrefix("rgb(") || lower.hasPrefix("rgba(") {
+            let inner = lower.replacingOccurrences(of: "rgba(", with: "")
+                             .replacingOccurrences(of: "rgb(", with: "")
+                             .replacingOccurrences(of: ")", with: "")
+            let parts = inner.split(whereSeparator: { $0 == "," || $0 == " " || $0 == "/" })
+                             .map { $0.trimmingCharacters(in: .whitespaces) }
+                             .filter { !$0.isEmpty }
+            if parts.count >= 3 {
+                guard let r = Double(parts[0]),
+                      let g = Double(parts[1]),
+                      let b = Double(parts[2]) else { return nil }
+                let a = parts.count >= 4 ? (Double(parts[3]) ?? 1.0) : 1.0
+                return NSColor(red: CGFloat(max(0, min(255, r)) / 255.0),
+                               green: CGFloat(max(0, min(255, g)) / 255.0),
+                               blue: CGFloat(max(0, min(255, b)) / 255.0),
+                               alpha: CGFloat(max(0, min(1.0, a))))
+            }
+        }
+
+        // hsl(...) or hsla(...)
+        if lower.hasPrefix("hsl(") || lower.hasPrefix("hsla(") {
+            let inner = lower.replacingOccurrences(of: "hsla(", with: "")
+                             .replacingOccurrences(of: "hsl(", with: "")
+                             .replacingOccurrences(of: ")", with: "")
+                             .replacingOccurrences(of: "%", with: "")
+            let parts = inner.split(whereSeparator: { $0 == "," || $0 == " " || $0 == "/" })
+                             .map { $0.trimmingCharacters(in: .whitespaces) }
+                             .filter { !$0.isEmpty }
+            if parts.count >= 3 {
+                guard let h = Double(parts[0]),
+                      let s = Double(parts[1]),
+                      let l = Double(parts[2]) else { return nil }
+                let a = parts.count >= 4 ? (Double(parts[3]) ?? 1.0) : 1.0
+                let hNorm = (h.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) / 360.0
+                let sNorm = max(0, min(100, s)) / 100.0
+                let lNorm = max(0, min(100, l)) / 100.0
+                return NSColor(hue: CGFloat(hNorm), saturation: CGFloat(sNorm), brightness: CGFloat(lNorm), alpha: CGFloat(max(0, min(1.0, a))))
+            }
+        }
+
+        return nil
     }
 }
 
