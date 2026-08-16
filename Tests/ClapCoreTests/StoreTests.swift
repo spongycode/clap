@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 @testable import ClapCore
 
@@ -742,6 +743,67 @@ struct ShellHistoryStoreTests {
             let regexHits = try await store.search(SearchQuery(regex: "terminal command", type: .shell))
             #expect(regexHits.count == 1)
             #expect(regexHits[0].content == "hello world terminal command")
+        }
+    }
+
+    @Test func ocrExtractsTextAndEnablesSearch() async throws {
+        try await withStore { store, _ in
+            let size = CGSize(width: 400, height: 100)
+            let image = NSImage(size: size)
+            image.lockFocus()
+            NSColor.white.setFill()
+            NSRect(origin: .zero, size: size).fill()
+            let text = "SecretAuthToken987"
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: 18),
+                .foregroundColor: NSColor.black
+            ]
+            text.draw(at: CGPoint(x: 20, y: 35), withAttributes: attrs)
+            image.unlockFocus()
+
+            guard let tiffData = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData),
+                  let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                Issue.record("Failed to generate test image")
+                return
+            }
+
+            guard let result = try await store.captureImage(data: pngData, format: "png", sourceApp: "test") else {
+                Issue.record("Failed to capture test image")
+                return
+            }
+
+            #expect(result.entry.type == .image)
+            #expect(result.entry.content?.contains("SecretAuthToken987") == true)
+
+            // Full-text search for OCR extracted text
+            let hits = try await store.search(SearchQuery(text: "SecretAuthToken987"))
+            #expect(hits.count == 1)
+            #expect(hits[0].id == result.entry.id)
+            #expect(hits[0].type == .image)
+        }
+    }
+
+    @Test func shortcutCRUDAndDictionary() async throws {
+        try await withStore { store, _ in
+            let emailEntry = try #require(try await store.captureText("himanshu.kumar@grofers.com", sourceApp: nil)).entry
+            let zoomEntry = try #require(try await store.captureText("https://zoom.us/j/12345", sourceApp: nil)).entry
+
+            _ = try await store.setShortcut(";email", id: emailEntry.id)
+            _ = try await store.setShortcut(";zoom", id: zoomEntry.id)
+
+            let reloaded = try #require(try await store.entry(id: emailEntry.id))
+            #expect(reloaded.shortcut == ";email")
+
+            let all = try await store.allShortcuts()
+            #expect(all[";email"] == "himanshu.kumar@grofers.com")
+            #expect(all[";zoom"] == "https://zoom.us/j/12345")
+
+            // Remove shortcut
+            _ = try await store.setShortcut(nil, id: zoomEntry.id)
+            let updated = try await store.allShortcuts()
+            #expect(updated[";email"] == "himanshu.kumar@grofers.com")
+            #expect(updated[";zoom"] == nil)
         }
     }
 }

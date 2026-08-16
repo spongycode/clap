@@ -171,6 +171,284 @@ struct PreviewView: View {
                         )
                     }
 
+                    if let content = entry.content, let decodedB64 = TextTransformer.decodeBase64(content) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.blue)
+                                .frame(width: 22, height: 22)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("Base64 Decoded")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Button {
+                                        state.copyTransformedText(decodedB64)
+                                    } label: {
+                                        Label("Copy Decoded", systemImage: "doc.on.doc")
+                                            .font(.system(size: 10))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                }
+                                Text(decodedB64)
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .lineLimit(3)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.blue.opacity(0.06))
+                        )
+                    }
+
+                    if let content = entry.content, let decodedURL = TextTransformer.decodeURL(content) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "link")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.teal)
+                                .frame(width: 22, height: 22)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("URL Decoded")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Button {
+                                        state.copyTransformedText(decodedURL)
+                                    } label: {
+                                        Label("Copy Decoded", systemImage: "doc.on.doc")
+                                            .font(.system(size: 10))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                }
+                                Text(decodedURL)
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .lineLimit(3)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.teal.opacity(0.06))
+                        )
+                    }
+
+                    if let content = entry.content, let jwt = JWTData.parse(content) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "key.horizontal.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.indigo)
+                                Text("JWT Inspector")
+                                    .font(.system(size: 12.5, weight: .bold))
+                                    .foregroundStyle(.primary)
+
+                                Text(jwt.algorithm)
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.primary.opacity(0.08))
+                                    )
+
+                                if let isExp = jwt.isExpired {
+                                    HStack(spacing: 3) {
+                                        Circle()
+                                            .fill(isExp ? Color.red : Color.green)
+                                            .frame(width: 6, height: 6)
+                                        Text(isExp ? "Expired" : "Valid")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(isExp ? .red : .green)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill((isExp ? Color.red : Color.green).opacity(0.12))
+                                    )
+                                }
+
+                                Spacer()
+
+                                Menu {
+                                    Button("Copy Payload JSON") {
+                                        state.copyTransformedText(jwt.payloadJSON)
+                                    }
+                                    Button("Copy Header JSON") {
+                                        state.copyTransformedText(jwt.headerJSON)
+                                    }
+                                } label: {
+                                    Label("Copy JSON", systemImage: "doc.on.doc")
+                                        .font(.system(size: 10))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+
+                            if jwt.subject != nil || jwt.issuer != nil || jwt.expirationDate != nil {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    if let sub = jwt.subject {
+                                        HStack(spacing: 6) {
+                                            Text("Subject:")
+                                                .font(.system(size: 10.5, weight: .medium))
+                                                .foregroundStyle(.secondary)
+                                            Text(sub)
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    if let iss = jwt.issuer {
+                                        HStack(spacing: 6) {
+                                            Text("Issuer:")
+                                                .font(.system(size: 10.5, weight: .medium))
+                                                .foregroundStyle(.secondary)
+                                            Text(iss)
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    if let expDate = jwt.expirationDate {
+                                        HStack(spacing: 6) {
+                                            Text("Expires:")
+                                                .font(.system(size: 10.5, weight: .medium))
+                                                .foregroundStyle(.secondary)
+                                            Text(Self.dateFormatter.string(from: expDate))
+                                                .font(.system(size: 11))
+                                        }
+                                    }
+                                }
+                            }
+
+                            Divider()
+
+                            Text("Decoded Payload:")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(.secondary)
+
+                            Text(jwt.payloadJSON)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(Color.primary.opacity(0.04))
+                                )
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.indigo.opacity(0.06))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(Color.indigo.opacity(0.18), lineWidth: 1)
+                                )
+                        )
+                    }
+
+                    if let content = entry.content, let epoch = EpochData.parse(content) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .center, spacing: 8) {
+                                Image(systemName: "clock.badge.checkmark.fill")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.orange)
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Epoch Timestamp")
+                                        .font(.system(size: 12.5, weight: .bold))
+                                        .foregroundStyle(.primary)
+
+                                    Text(epoch.unitDescription)
+                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(
+                                            Capsule()
+                                                .fill(Color.orange.opacity(0.12))
+                                        )
+                                }
+
+                                Spacer()
+
+                                Menu {
+                                    Button("Copy ISO 8601 (\(epoch.iso8601))") {
+                                        state.copyTransformedText(epoch.iso8601)
+                                    }
+                                    Button("Copy Local Date") {
+                                        state.copyTransformedText(epoch.localFormatted)
+                                    }
+                                    if epoch.unitDescription.contains("Seconds") {
+                                        Button("Copy as Milliseconds (\(epoch.unixMillis))") {
+                                            state.copyTransformedText(String(epoch.unixMillis))
+                                        }
+                                    } else {
+                                        Button("Copy as Seconds (\(epoch.unixSeconds))") {
+                                            state.copyTransformedText(String(epoch.unixSeconds))
+                                        }
+                                    }
+                                } label: {
+                                    Label("Copy Date", systemImage: "doc.on.doc")
+                                        .font(.system(size: 10))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(epoch.localFormatted)
+                                    .font(.system(size: 12.5, weight: .medium))
+                                    .foregroundStyle(.primary)
+                                    .textSelection(.enabled)
+
+                                HStack(spacing: 5) {
+                                    Text("UTC:")
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(epoch.iso8601)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                }
+
+                                HStack(spacing: 5) {
+                                    Text("Relative:")
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(epoch.relativeFormatted)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.primary.opacity(0.04))
+                            )
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.orange.opacity(0.06))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
+                                )
+                        )
+                    }
+
                     Text(highlightedDisplayedText)
                         .font(.system(size: 13, design: .monospaced))
                         .textSelection(.enabled)
@@ -179,15 +457,66 @@ struct PreviewView: View {
                 .padding(14)
             }
         } else {
-            ZStack {
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .padding(8)
-                } else {
-                    ProgressView()
+            ScrollView([.vertical]) {
+                VStack(spacing: 12) {
+                    ZStack {
+                        if let image {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                                )
+                        } else {
+                            ProgressView()
+                                .frame(height: 140)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+
+                    if let ocrText = entry.content, !ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Label("Extracted Text (OCR)", systemImage: "doc.text.viewfinder")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Button {
+                                    state.copyTransformedText(ocrText)
+                                } label: {
+                                    Label("Copy Text", systemImage: "doc.on.doc")
+                                        .font(.system(size: 10))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+
+                            Text(ocrText)
+                                .font(.system(size: 11.5, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(Color.primary.opacity(0.04))
+                                )
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.03))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+                                )
+                        )
+                    }
                 }
+                .padding(14)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .task(id: entry.id) {
@@ -206,15 +535,87 @@ struct PreviewView: View {
             GridRow {
                 metaLabel("Actions")
                 HStack(spacing: 8) {
+                    if entry.type == .image, let ocrText = entry.content, !ocrText.isEmpty {
+                        Button {
+                            state.copyTransformedText(ocrText)
+                        } label: {
+                            Label("Copy Text", systemImage: "doc.text.viewfinder")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Copy recognized OCR text from this image")
+                    }
                     if (entry.type == .text || entry.type == .shell),
-                       let content = entry.content, content.count <= 1000 {
+                       let content = entry.content, content.count <= 10_000 {
                         Menu {
-                            ForEach(CaseConverter.CaseStyle.allCases) { style in
+                            if let epoch = EpochData.parse(content) {
+                                Section("Timestamp") {
+                                    Button("Copy ISO 8601 Date (\(epoch.iso8601))") {
+                                        state.copyTransformedText(epoch.iso8601)
+                                    }
+                                    Button("Copy Local Date") {
+                                        state.copyTransformedText(epoch.localFormatted)
+                                    }
+                                    if epoch.unitDescription.contains("Seconds") {
+                                        Button("Copy as Milliseconds (\(epoch.unixMillis))") {
+                                            state.copyTransformedText(String(epoch.unixMillis))
+                                        }
+                                    } else {
+                                        Button("Copy as Seconds (\(epoch.unixSeconds))") {
+                                            state.copyTransformedText(String(epoch.unixSeconds))
+                                        }
+                                    }
+                                }
+                            }
+                            if let jwt = JWTData.parse(content) {
+                                Section("JWT Token") {
+                                    Button("Copy Payload JSON") {
+                                        state.copyTransformedText(jwt.payloadJSON)
+                                    }
+                                    Button("Copy Header JSON") {
+                                        state.copyTransformedText(jwt.headerJSON)
+                                    }
+                                }
+                            }
+                            if content.count <= 1000 {
+                                Section("Text Case") {
+                                    ForEach(CaseConverter.CaseStyle.allCases) { style in
+                                        Button {
+                                            let converted = CaseConverter.convert(content, to: style)
+                                            state.copyTransformedText(converted)
+                                        } label: {
+                                            Text("\(style.rawValue)  (\(CaseConverter.convert(content, to: style).prefix(16))…)")
+                                        }
+                                    }
+                                }
+                            }
+                            Section("Encode / Decode") {
                                 Button {
-                                    let converted = CaseConverter.convert(content, to: style)
+                                    let converted = TextTransformer.encodeBase64(content)
                                     state.copyTransformedText(converted)
                                 } label: {
-                                    Text("\(style.rawValue)  (\(CaseConverter.convert(content, to: style).prefix(16))…)")
+                                    Text("Base64 Encode")
+                                }
+                                if let decoded = TextTransformer.decodeBase64(content) {
+                                    Button {
+                                        state.copyTransformedText(decoded)
+                                    } label: {
+                                        Text("Base64 Decode  (\(decoded.prefix(16))…)")
+                                    }
+                                }
+                                Button {
+                                    let converted = TextTransformer.encodeURL(content)
+                                    state.copyTransformedText(converted)
+                                } label: {
+                                    Text("URL Encode")
+                                }
+                                if let decoded = TextTransformer.decodeURL(content) {
+                                    Button {
+                                        state.copyTransformedText(decoded)
+                                    } label: {
+                                        Text("URL Decode  (\(decoded.prefix(16))…)")
+                                    }
                                 }
                             }
                         } label: {
@@ -223,7 +624,20 @@ struct PreviewView: View {
                         }
                         .menuStyle(.borderedButton)
                         .controlSize(.small)
-                        .help("Convert text case and copy directly to clipboard")
+                        .help("Convert text case or encode/decode and copy directly to clipboard")
+                    }
+
+                    if (entry.type == .text || entry.type == .shell) {
+                        Button {
+                            state.promptSetShortcut(entry)
+                        } label: {
+                            Label(entry.shortcut ?? "Shortcut",
+                                  systemImage: entry.shortcut != nil ? "keyboard.fill" : "keyboard")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help(entry.shortcut != nil ? "Edit snippet expansion shortcut (\(entry.shortcut!))" : "Assign a text abbreviation (e.g. ;email) to auto-expand this snippet")
                     }
 
                     Button {

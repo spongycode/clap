@@ -169,6 +169,7 @@ final class AppState: ObservableObject {
                 if self.selectedEntry == nil {
                     self.selectedID = self.flatRows.first?.id
                 }
+                self.refreshSnippets()
             } catch {
                 guard gen == self.generation else { return }
                 if case ClapCoreError.invalidPattern = error {
@@ -296,6 +297,28 @@ final class AppState: ObservableObject {
     func toggleFavorite(_ entry: ClipboardEntry) {
         selectedID = entry.id
         toggleFavoriteSelected()
+    }
+
+    func promptSetShortcut(_ entry: ClipboardEntry) {
+        SnippetWindowController.shared.show(for: entry, state: self)
+    }
+
+    func setShortcut(_ shortcut: String?, for entry: ClipboardEntry) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.store.setShortcut(shortcut, id: entry.id)
+            IPC.post(.storeChanged)
+            self.reload()
+            self.refreshSnippets()
+        }
+    }
+
+    func refreshSnippets() {
+        Task { [weak self] in
+            guard let self else { return }
+            let all = (try? await self.store.allShortcuts()) ?? [:]
+            SnippetExpander.shared.updateSnippets(all)
+        }
     }
 
     // MARK: - Copy to pasteboard

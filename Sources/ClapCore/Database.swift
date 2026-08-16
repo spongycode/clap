@@ -198,7 +198,8 @@ final class Database {
         is_pinned     INTEGER NOT NULL DEFAULT 0,
         is_favorite   INTEGER NOT NULL DEFAULT 0,
         use_count     INTEGER NOT NULL DEFAULT 1,
-        source_app    TEXT
+        source_app    TEXT,
+        shortcut      TEXT
     );
     -- Non-unique: dedup is enforced by the lookup inside the capture
     -- transaction (BEGIN IMMEDIATE serializes writers across processes), and
@@ -207,6 +208,7 @@ final class Database {
     CREATE INDEX IF NOT EXISTS idx_entries_hash ON entries(type, content_hash);
     CREATE INDEX IF NOT EXISTS idx_entries_lru  ON entries(is_pinned, last_used_at);
     CREATE INDEX IF NOT EXISTS idx_entries_type ON entries(type, last_used_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_entries_shortcut ON entries(shortcut);
     CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
         content, content='entries', content_rowid='id', tokenize='unicode61'
     );
@@ -233,15 +235,18 @@ final class Database {
     /// Idempotent schema creation; sets user_version = 1.
     func migrate() throws {
         try transaction {
-            // 1. Upgrade existing entries table if is_favorite is missing BEFORE creating index
             let columns = try query("PRAGMA table_info(entries)", [], { row in row.text(1) ?? "" })
-            if !columns.isEmpty && !columns.contains("is_favorite") {
-                try exec("ALTER TABLE entries ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
+            if !columns.isEmpty {
+                if !columns.contains("is_favorite") {
+                    try exec("ALTER TABLE entries ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
+                }
+                if !columns.contains("shortcut") {
+                    try exec("ALTER TABLE entries ADD COLUMN shortcut TEXT")
+                }
             }
-            // 2. Run schema SQL for tables/triggers/indexes
             try exec(Self.schemaSQL)
-            // 3. Ensure idx_entries_fav index exists
             try exec("CREATE INDEX IF NOT EXISTS idx_entries_fav ON entries(is_favorite, last_used_at DESC)")
+            try exec("CREATE INDEX IF NOT EXISTS idx_entries_shortcut ON entries(shortcut)")
             try exec("PRAGMA user_version = 1")
         }
     }

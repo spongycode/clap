@@ -16,6 +16,26 @@ public struct ClipboardEntry: Identifiable, Sendable, Equatable {
     public let isFavorite: Bool
     public let useCount: Int
     public let sourceApp: String?
+    public let shortcut: String?
+
+    public init(id: Int64, type: EntryType, content: String?, imagePath: String?, imageFormat: String?,
+                contentHash: String, createdAt: Date, lastUsedAt: Date, sizeBytes: Int64,
+                isPinned: Bool, isFavorite: Bool, useCount: Int, sourceApp: String?, shortcut: String? = nil) {
+        self.id = id
+        self.type = type
+        self.content = content
+        self.imagePath = imagePath
+        self.imageFormat = imageFormat
+        self.contentHash = contentHash
+        self.createdAt = createdAt
+        self.lastUsedAt = lastUsedAt
+        self.sizeBytes = sizeBytes
+        self.isPinned = isPinned
+        self.isFavorite = isFavorite
+        self.useCount = useCount
+        self.sourceApp = sourceApp
+        self.shortcut = shortcut
+    }
 }
 
 public struct SearchQuery: Sendable {

@@ -133,13 +133,14 @@ public actor ClipboardStore {
             } catch {
                 throw ClapCoreError.io("failed to write image file at \(fileURL.path)")
             }
+            let ocrText = OCRScanner.recognizeText(from: data)
             do {
                 try db.run("""
                     INSERT INTO entries (type, content, image_path, image_format, content_hash,
                                          created_at, last_used_at, size_bytes, is_pinned, use_count, source_app)
-                    VALUES ('image', NULL, ?, ?, ?, ?, ?, ?, 0, 1, ?)
+                    VALUES ('image', ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
                     """,
-                    [.text(relativePath), .text(ext), .text(hash), .double(now), .double(now),
+                    [ocrText.map(SQLValue.text) ?? .null, .text(relativePath), .text(ext), .text(hash), .double(now), .double(now),
                      .int(Int64(data.count)), sourceApp.map(SQLValue.text) ?? .null])
                 guard let inserted = try firstEntry("id = ?", [.int(db.lastInsertRowid)]) else {
                     throw ClapCoreError.database(code: 0, message: "insert did not produce a row")
@@ -302,13 +303,14 @@ public actor ClipboardStore {
             } catch {
                 throw ClapCoreError.io("failed to write image file at \(fileURL.path)")
             }
+            let ocrText = OCRScanner.recognizeText(from: data)
             do {
                 try db.run("""
                     INSERT INTO entries (type, content, image_path, image_format, content_hash,
                                          created_at, last_used_at, size_bytes, is_pinned, use_count, source_app)
-                    VALUES ('image', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES ('image', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    [.text(relativePath), .text(ext), .text(hash),
+                    [ocrText.map(SQLValue.text) ?? .null, .text(relativePath), .text(ext), .text(hash),
                      .double(createdAt.timeIntervalSince1970), .double(lastUsedAt.timeIntervalSince1970),
                      .int(Int64(data.count)), .int(pinned ? 1 : 0), .int(Int64(max(1, useCount))),
                      sourceApp.map(SQLValue.text) ?? .null])
@@ -318,6 +320,12 @@ public actor ClipboardStore {
                 throw error
             }
         }
+    }
+
+    /// Updates the extracted OCR text for an image entry.
+    public func updateOCRText(for entryID: Int64, ocrText: String) throws {
+        try db.run("UPDATE entries SET content = ? WHERE id = ? AND type = 'image'",
+                   [.text(ocrText), .int(entryID)])
     }
 
     /// Must run inside a transaction started by the caller.
@@ -423,6 +431,33 @@ public actor ClipboardStore {
     public func setFavorite(_ favorite: Bool, id: Int64) throws -> Bool {
         try db.run("UPDATE entries SET is_favorite = ? WHERE id = ?", [.int(favorite ? 1 : 0), .int(id)])
         return db.changes > 0
+    }
+
+    /// Sets or removes a trigger shortcut (e.g. ";email") for an entry.
+    @discardableResult
+    public func setShortcut(_ shortcut: String?, id: Int64) throws -> Bool {
+        let trimmed = shortcut?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = (trimmed?.isEmpty == false) ? trimmed : nil
+        try db.run("UPDATE entries SET shortcut = ? WHERE id = ?",
+                   [normalized.map(SQLValue.text) ?? .null, .int(id)])
+        return db.changes > 0
+    }
+
+    /// Returns a dictionary of all active shortcuts mapping `shortcut -> expandedText`.
+    public func allShortcuts() throws -> [String: String] {
+        let rows = try db.query("""
+            SELECT shortcut, content FROM entries
+            WHERE shortcut IS NOT NULL AND shortcut != '' AND content IS NOT NULL AND content != ''
+            """, [], { stmt in
+            (stmt.text(0) ?? "", stmt.text(1) ?? "")
+        })
+        var map: [String: String] = [:]
+        for (shortcut, content) in rows {
+            if !shortcut.isEmpty && !content.isEmpty {
+                map[shortcut] = content
+            }
+        }
+        return map
     }
 
     /// Removes every entry (counters are kept) and wipes the contents of
@@ -805,7 +840,7 @@ public actor ClipboardStore {
 
     // MARK: - Internal helpers
 
-    static let entryColumns = "id, type, content, image_path, image_format, content_hash, created_at, last_used_at, size_bytes, is_pinned, is_favorite, use_count, source_app"
+    static let entryColumns = "id, type, content, image_path, image_format, content_hash, created_at, last_used_at, size_bytes, is_pinned, is_favorite, use_count, source_app, shortcut"
 
     static func rowToEntry(_ stmt: Statement) -> ClipboardEntry {
         ClipboardEntry(
@@ -821,7 +856,8 @@ public actor ClipboardStore {
             isPinned: stmt.int64(9) != 0,
             isFavorite: stmt.int64(10) != 0,
             useCount: Int(stmt.int64(11)),
-            sourceApp: stmt.text(12)
+            sourceApp: stmt.text(12),
+            shortcut: stmt.text(13)
         )
     }
 
