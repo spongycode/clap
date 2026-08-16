@@ -22,7 +22,8 @@
 - **Instant** — Hash-indexed dedup, SQLite WAL + FTS5 search, virtualized SwiftUI list, thumbnail cache.
 - **Keyboard-first & Fast** — `⌘⇧V` opens the panel; single click or `Enter` copies, closes, and pastes directly.
 - **Permanent Favorites & Snippets** — Bookmark canned replies, email signatures, code snippets, and commands (`⌘S` / `⌘4`).
-- **Quick Text Case Conversions** — Transform snippets into `camelCase`, `snake_case`, `kebab-case`, `PascalCase`, `UPPERCASE`, etc., on copy.
+- **Developer Smart Cards** — Automatic previews and one-click actions for Base64, URL encoding, JWT tokens, and Unix timestamps.
+- **Text Case & Encoding Transforms** — Convert text on the fly (`camelCase`, `snake_case`, Base64, URL encode/decode).
 - **Smart Color Swatch Detection** — Recognizes `#hex`, `rgb()`, `rgba()`, `hsl()` color codes with live inline circle swatches.
 - **Search Match Highlighting** — High-contrast match highlighting across list items and preview pane for terms, phrases, and regex.
 - **Shell History Ingestion** — Automatically captures and indexes commands from `~/.zsh_history` and `~/.bash_history`.
@@ -113,8 +114,8 @@ Press **⌘⇧V** to open the panel (configurable in Settings to `⌘⇧B`, `⌘
 | **⌘R** | Toggle regex search mode (or click the `.*` button) |
 | **Esc** | Close panel |
 
-- **Hover Selection**: Hovering over any row selects it and opens a rich preview (full scrollable text/command, high-res image, color swatch card, and case conversion menu).
-- **Copy As… Transformation**: Click "Copy as…" in the preview popup or right-click any text entry to transform case into `camelCase`, `snake_case`, `kebab-case`, etc.
+- **Hover Selection**: Hovering over any row selects it and opens a rich preview (scrollable text/command, image preview, color swatch, JWT inspector, or Unix timestamp card).
+- **Copy As… & Transforms**: Click "Copy as…" in the preview popup or right-click any text entry to convert text cases, encode/decode Base64 or URLs, copy decoded JWT JSON, or format Unix timestamps.
 - **Direct Paste**: Pastes straight into your frontmost application (requires Accessibility permission prompted on first launch).
 - **Move & Resize**: Drag the panel background to reposition and drag edges to resize. Position and dimensions persist across restarts.
 

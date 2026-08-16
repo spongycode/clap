@@ -357,6 +357,98 @@ struct PreviewView: View {
                         )
                     }
 
+                    if let content = entry.content, let epoch = EpochData.parse(content) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .center, spacing: 8) {
+                                Image(systemName: "clock.badge.checkmark.fill")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.orange)
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Epoch Timestamp")
+                                        .font(.system(size: 12.5, weight: .bold))
+                                        .foregroundStyle(.primary)
+
+                                    Text(epoch.unitDescription)
+                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(
+                                            Capsule()
+                                                .fill(Color.orange.opacity(0.12))
+                                        )
+                                }
+
+                                Spacer()
+
+                                Menu {
+                                    Button("Copy ISO 8601 (\(epoch.iso8601))") {
+                                        state.copyTransformedText(epoch.iso8601)
+                                    }
+                                    Button("Copy Local Date") {
+                                        state.copyTransformedText(epoch.localFormatted)
+                                    }
+                                    if epoch.unitDescription.contains("Seconds") {
+                                        Button("Copy as Milliseconds (\(epoch.unixMillis))") {
+                                            state.copyTransformedText(String(epoch.unixMillis))
+                                        }
+                                    } else {
+                                        Button("Copy as Seconds (\(epoch.unixSeconds))") {
+                                            state.copyTransformedText(String(epoch.unixSeconds))
+                                        }
+                                    }
+                                } label: {
+                                    Label("Copy Date", systemImage: "doc.on.doc")
+                                        .font(.system(size: 10))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(epoch.localFormatted)
+                                    .font(.system(size: 12.5, weight: .medium))
+                                    .foregroundStyle(.primary)
+                                    .textSelection(.enabled)
+
+                                HStack(spacing: 5) {
+                                    Text("UTC:")
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(epoch.iso8601)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                }
+
+                                HStack(spacing: 5) {
+                                    Text("Relative:")
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(epoch.relativeFormatted)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.primary.opacity(0.04))
+                            )
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.orange.opacity(0.06))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
+                                )
+                        )
+                    }
+
                     Text(highlightedDisplayedText)
                         .font(.system(size: 13, design: .monospaced))
                         .textSelection(.enabled)
@@ -395,6 +487,25 @@ struct PreviewView: View {
                     if (entry.type == .text || entry.type == .shell),
                        let content = entry.content, content.count <= 10_000 {
                         Menu {
+                            if let epoch = EpochData.parse(content) {
+                                Section("Timestamp") {
+                                    Button("Copy ISO 8601 Date (\(epoch.iso8601))") {
+                                        state.copyTransformedText(epoch.iso8601)
+                                    }
+                                    Button("Copy Local Date") {
+                                        state.copyTransformedText(epoch.localFormatted)
+                                    }
+                                    if epoch.unitDescription.contains("Seconds") {
+                                        Button("Copy as Milliseconds (\(epoch.unixMillis))") {
+                                            state.copyTransformedText(String(epoch.unixMillis))
+                                        }
+                                    } else {
+                                        Button("Copy as Seconds (\(epoch.unixSeconds))") {
+                                            state.copyTransformedText(String(epoch.unixSeconds))
+                                        }
+                                    }
+                                }
+                            }
                             if let jwt = JWTData.parse(content) {
                                 Section("JWT Token") {
                                     Button("Copy Payload JSON") {

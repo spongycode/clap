@@ -32,6 +32,11 @@ struct EntryRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.indigo)
                     .frame(width: 18)
+            } else if EpochData.parse(entry.content) != nil {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .frame(width: 18)
             }
             Text(highlightedPreview)
                 .lineLimit(1)
@@ -73,6 +78,25 @@ struct EntryRow: View {
             if (entry.type == .text || entry.type == .shell),
                let content = entry.content, content.count <= 10_000 {
                 Menu("Copy As") {
+                    if let epoch = EpochData.parse(content) {
+                        Section("Timestamp") {
+                            Button("Copy ISO 8601 Date") {
+                                state.copyTransformedText(epoch.iso8601)
+                            }
+                            Button("Copy Local Formatted Date") {
+                                state.copyTransformedText(epoch.localFormatted)
+                            }
+                            if epoch.unitDescription.contains("Seconds") {
+                                Button("Copy as Milliseconds (\(epoch.unixMillis))") {
+                                    state.copyTransformedText(String(epoch.unixMillis))
+                                }
+                            } else {
+                                Button("Copy as Seconds (\(epoch.unixSeconds))") {
+                                    state.copyTransformedText(String(epoch.unixSeconds))
+                                }
+                            }
+                        }
+                    }
                     if let jwt = JWTData.parse(content) {
                         Section("JWT Token") {
                             Button("Copy Payload JSON") {
@@ -452,6 +476,91 @@ struct JWTData {
             return nil
         }
         return dict
+    }
+}
+
+// MARK: - Epoch & Timestamp Parser
+
+struct EpochData {
+    let date: Date
+    let unitDescription: String
+    let localFormatted: String
+    let iso8601: String
+    let relativeFormatted: String
+    let unixSeconds: Int64
+    let unixMillis: Int64
+
+    private static let localFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .full
+        df.timeStyle = .long
+        return df
+    }()
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
+
+    static func parse(_ text: String?) -> EpochData? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count >= 9, trimmed.count <= 22 else { return nil }
+
+        // Must be purely digits (or digits followed by .0 or decimal fractions)
+        let parts = trimmed.components(separatedBy: ".")
+        guard parts.count <= 2, parts[0].allSatisfy(\.isNumber) else { return nil }
+        if parts.count == 2 {
+            guard parts[1].allSatisfy(\.isNumber) else { return nil }
+        }
+
+        guard let rawDouble = Double(trimmed) else { return nil }
+
+        let date: Date
+        let unit: String
+
+        // Seconds: 1_000_000_000 ... 2_500_000_000 (10 digits: 2001 to 2049)
+        if rawDouble >= 1_000_000_000 && rawDouble <= 2_500_000_000 {
+            date = Date(timeIntervalSince1970: rawDouble)
+            unit = "Seconds (10-digit)"
+        }
+        // Milliseconds: 1_000_000_000_000 ... 2_500_000_000_000 (13 digits)
+        else if rawDouble >= 1_000_000_000_000 && rawDouble <= 2_500_000_000_000 {
+            date = Date(timeIntervalSince1970: rawDouble / 1000.0)
+            unit = "Milliseconds (13-digit)"
+        }
+        // Microseconds: 1_000_000_000_000_000 ... 2_500_000_000_000_000 (16 digits)
+        else if rawDouble >= 1_000_000_000_000_000 && rawDouble <= 2_500_000_000_000_000 {
+            date = Date(timeIntervalSince1970: rawDouble / 1_000_000.0)
+            unit = "Microseconds (16-digit)"
+        }
+        // Nanoseconds: 1_000_000_000_000_000_000 ... 2_500_000_000_000_000_000 (19 digits)
+        else if rawDouble >= 1_000_000_000_000_000_000 && rawDouble <= 2_500_000_000_000_000_000 {
+            date = Date(timeIntervalSince1970: rawDouble / 1_000_000_000.0)
+            unit = "Nanoseconds (19-digit)"
+        } else {
+            return nil
+        }
+
+        let seconds = Int64(date.timeIntervalSince1970)
+        let millis = Int64(date.timeIntervalSince1970 * 1000)
+
+        return EpochData(
+            date: date,
+            unitDescription: unit,
+            localFormatted: localFormatter.string(from: date),
+            iso8601: isoFormatter.string(from: date),
+            relativeFormatted: relativeFormatter.localizedString(for: date, relativeTo: Date()),
+            unixSeconds: seconds,
+            unixMillis: millis
+        )
     }
 }
 
