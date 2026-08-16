@@ -58,6 +58,8 @@ final class AppState: ObservableObject {
     @Published private(set) var searchError: String?
     /// Incremented to move keyboard focus into the search field.
     @Published var searchFocusToken = 0
+    /// Entry currently having its shortcut edited in the sheet.
+    @Published var editingShortcutEntry: ClipboardEntry?
 
     static let pageSize = 100
 
@@ -169,6 +171,7 @@ final class AppState: ObservableObject {
                 if self.selectedEntry == nil {
                     self.selectedID = self.flatRows.first?.id
                 }
+                self.refreshSnippets()
             } catch {
                 guard gen == self.generation else { return }
                 if case ClapCoreError.invalidPattern = error {
@@ -296,6 +299,28 @@ final class AppState: ObservableObject {
     func toggleFavorite(_ entry: ClipboardEntry) {
         selectedID = entry.id
         toggleFavoriteSelected()
+    }
+
+    func promptSetShortcut(_ entry: ClipboardEntry) {
+        editingShortcutEntry = entry
+    }
+
+    func setShortcut(_ shortcut: String?, for entry: ClipboardEntry) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.store.setShortcut(shortcut, id: entry.id)
+            IPC.post(.storeChanged)
+            self.reload()
+            self.refreshSnippets()
+        }
+    }
+
+    func refreshSnippets() {
+        Task { [weak self] in
+            guard let self else { return }
+            let all = (try? await self.store.allShortcuts()) ?? [:]
+            SnippetExpander.shared.updateSnippets(all)
+        }
     }
 
     // MARK: - Copy to pasteboard

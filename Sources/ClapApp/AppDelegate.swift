@@ -61,6 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await monitor?.refreshConfig()
             await monitor?.start()
             await shellMonitor?.start()
+
+            let snippetsEnabled = (try? await store.config("snippets.enabled")) != "false"
+            SnippetExpander.shared.setEnabled(snippetsEnabled)
+            let shortcuts = (try? await store.allShortcuts()) ?? [:]
+            SnippetExpander.shared.updateSnippets(shortcuts)
+            SnippetExpander.shared.start()
         }
         workers.start(store: store)
 
@@ -68,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        SnippetExpander.shared.stop()
         Task { [monitor, shellMonitor] in
             await monitor?.stop()
             await shellMonitor?.stop()

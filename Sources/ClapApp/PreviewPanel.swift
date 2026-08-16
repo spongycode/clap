@@ -627,6 +627,19 @@ struct PreviewView: View {
                         .help("Convert text case or encode/decode and copy directly to clipboard")
                     }
 
+                    if (entry.type == .text || entry.type == .shell) {
+                        Button {
+                            state.promptSetShortcut(entry)
+                        } label: {
+                            Label(entry.shortcut ?? "Shortcut",
+                                  systemImage: entry.shortcut != nil ? "keyboard.fill" : "keyboard")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help(entry.shortcut != nil ? "Edit snippet expansion shortcut (\(entry.shortcut!))" : "Assign a text abbreviation (e.g. ;email) to auto-expand this snippet")
+                    }
+
                     Button {
                         copyID()
                     } label: {

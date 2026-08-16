@@ -55,6 +55,7 @@ struct SettingsView: View {
     @State private var launchError: String?
     @State private var paused = false
     @State private var pasteOnCopy = true
+    @State private var snippetsEnabled = true
     @State private var exclusions: [String] = []
     @State private var newExclusion = ""
 
@@ -65,6 +66,10 @@ struct SettingsView: View {
             .onChange(of: retentionDays) { _, value in save("retention.days", String(value)) }
             .onChange(of: hotkey) { _, value in save("ui.hotkey", value) }
             .onChange(of: paused) { _, value in save("monitoring.paused", value ? "1" : "0") }
+            .onChange(of: snippetsEnabled) { _, value in
+                save("snippets.enabled", value ? "1" : "0")
+                SnippetExpander.shared.setEnabled(value)
+            }
             .onChange(of: pasteOnCopy) { _, value in
                 save("paste.on_copy", value ? "1" : "0")
                 if value && !Paster.isTrusted {
@@ -223,6 +228,7 @@ struct SettingsView: View {
                 .foregroundColor(.red)
         }
         Toggle("Pause monitoring", isOn: $paused)
+        Toggle("Enable snippet expansion (Text Expander)", isOn: $snippetsEnabled)
         Toggle("Paste automatically on select", isOn: $pasteOnCopy)
         if pasteOnCopy {
             HStack {
@@ -312,6 +318,7 @@ struct SettingsView: View {
         retentionDays = await configInt("retention.days", fallback: 0)
         hotkey = (await configString("ui.hotkey")) ?? "cmd+shift+v"
         paused = await configString("monitoring.paused") == "1"
+        snippetsEnabled = await configString("snippets.enabled") != "0"
         pasteOnCopy = await configString("paste.on_copy") != "0"
         launchAtLogin = await configString("launch_at_login") == "1"
         if let raw = await configString("exclusions"),

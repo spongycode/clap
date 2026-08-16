@@ -25,6 +25,9 @@ struct ContentView: View {
         )
         .onAppear { searchFocused = true }
         .onChange(of: state.searchFocusToken) { _, _ in searchFocused = true }
+        .sheet(item: $state.editingShortcutEntry) { entry in
+            ShortcutSheet(entry: entry)
+        }
     }
 
     // MARK: - Header (search + tabs + gear)
@@ -219,5 +222,91 @@ struct MediaGridView: View {
                 if let id, !state.selectionCameFromPointer { proxy.scrollTo(id) }
             }
         }
+    }
+}
+
+// MARK: - Shortcut configuration sheet
+
+struct ShortcutSheet: View {
+    @EnvironmentObject private var state: AppState
+    let entry: ClipboardEntry
+    @State private var text: String = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "keyboard")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.indigo)
+                Text("Snippet Abbreviation")
+                    .font(.system(size: 14, weight: .bold))
+                Spacer()
+            }
+
+            Text("Type this abbreviation anywhere on your Mac to automatically expand this snippet:")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Text("Trigger Keyword:")
+                    .font(.system(size: 12, weight: .medium))
+                TextField("e.g. ;email or !zoom", text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 13, design: .monospaced))
+                    .focused($isFocused)
+                    .onSubmit {
+                        save()
+                    }
+            }
+
+            if let content = entry.content {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Expands to:")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text(content.prefix(160))
+                        .font(.system(size: 11, design: .monospaced))
+                        .lineLimit(3)
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.primary.opacity(0.04))
+                        )
+                }
+            }
+
+            HStack {
+                if entry.shortcut != nil {
+                    Button("Remove", role: .destructive) {
+                        state.setShortcut(nil, for: entry)
+                        state.editingShortcutEntry = nil
+                    }
+                }
+                Spacer()
+                Button("Cancel") {
+                    state.editingShortcutEntry = nil
+                }
+                Button("Save") {
+                    save()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(18)
+        .frame(width: 380)
+        .onAppear {
+            text = entry.shortcut ?? ""
+            isFocused = true
+        }
+    }
+
+    private func save() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        state.setShortcut(trimmed.isEmpty ? nil : trimmed, for: entry)
+        state.editingShortcutEntry = nil
     }
 }

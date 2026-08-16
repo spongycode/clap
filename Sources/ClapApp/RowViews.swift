@@ -53,6 +53,21 @@ struct EntryRow: View {
                     .font(.system(size: 12.5))
                     .foregroundStyle(.red)
             }
+            if let shortcut = entry.shortcut, !shortcut.isEmpty {
+                Text(shortcut)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.purple)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.purple.opacity(0.12))
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(Color.purple.opacity(0.25), lineWidth: 0.5)
+                            )
+                    )
+            }
             Text(RelativeTime.string(for: entry.lastUsedAt))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -75,6 +90,11 @@ struct EntryRow: View {
         }
         .contextMenu {
             Button("Copy") { state.copy(entry) }
+            if (entry.type == .text || entry.type == .shell) {
+                Button(entry.shortcut == nil ? "Set Snippet Shortcut…" : "Edit Snippet Shortcut (\(entry.shortcut!))…") {
+                    state.promptSetShortcut(entry)
+                }
+            }
             if (entry.type == .text || entry.type == .shell),
                let content = entry.content, content.count <= 10_000 {
                 Menu("Copy As") {
