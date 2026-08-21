@@ -8,14 +8,19 @@ on:
 jobs:
   test:
     name: Build, Test & Lint (macOS)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
+      # Package.swift requires Swift tools 6.0; macos-15 images ship an
+      # Xcode 16 series default. Pin to the latest stable for reproducibility.
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '15.4'
+          xcode-version: latest_stable
+
+      - name: Verify toolchain
+        run: swift --version
 
       - name: Build (warnings are errors)
         run: swift build -Xswiftc -warnings-as-errors
