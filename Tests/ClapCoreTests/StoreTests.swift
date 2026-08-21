@@ -30,11 +30,11 @@ struct CaptureTests {
     }
 
     @Test func duplicateTextTouchesInsteadOfInserting() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
+            clock.value = Date(timeIntervalSinceNow: -100)
             let first = try #require(try await store.captureText("dup me", sourceApp: nil))
-            // Backdate so the recency bump is observable.
-            try await store._test_setTimestamps(id: first.entry.id,
-                                                lastUsedAt: Date(timeIntervalSinceNow: -100))
+            clock.advance(60)
             let second = try #require(try await store.captureText("  dup me  ", sourceApp: nil))
             #expect(second.wasDuplicate == true)
             #expect(second.entry.id == first.entry.id)
@@ -53,18 +53,20 @@ struct CaptureTests {
 @Suite("Listing & recency")
 struct ListTests {
     @Test func listOrdersByRecency() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
+            clock.value = Date(timeIntervalSinceNow: -30)
             let a = try #require(try await store.captureText("alpha", sourceApp: nil)).entry
+            clock.value = Date(timeIntervalSinceNow: -20)
             let b = try #require(try await store.captureText("beta", sourceApp: nil)).entry
+            clock.value = Date(timeIntervalSinceNow: -10)
             let c = try #require(try await store.captureText("gamma", sourceApp: nil)).entry
-            try await store._test_setTimestamps(id: a.id, lastUsedAt: Date(timeIntervalSinceNow: -30))
-            try await store._test_setTimestamps(id: b.id, lastUsedAt: Date(timeIntervalSinceNow: -20))
-            try await store._test_setTimestamps(id: c.id, lastUsedAt: Date(timeIntervalSinceNow: -10))
 
             var listed = try await store.list(type: nil, limit: 100, offset: 0)
             #expect(listed.map(\.content) == ["gamma", "beta", "alpha"])
 
             // touch bumps recency to the front
+            clock.advance(10_000)
             try await store.touch(id: a.id)
             listed = try await store.list(type: nil, limit: 100, offset: 0)
             #expect(listed.map(\.content) == ["alpha", "gamma", "beta"])
@@ -73,10 +75,12 @@ struct ListTests {
     }
 
     @Test func listPaginationAndTypeFilter() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
+            clock.value = Date(timeIntervalSinceNow: -10)
             for i in 0..<5 {
-                let e = try #require(try await store.captureText("item \(i)", sourceApp: nil)).entry
-                try await store._test_setTimestamps(id: e.id, lastUsedAt: Date(timeIntervalSinceNow: Double(i - 10)))
+                _ = try #require(try await store.captureText("item \(i)", sourceApp: nil))
+                clock.advance(1)
             }
             _ = try #require(try await store.captureImage(data: makePNG(), format: "png", sourceApp: nil))
 
@@ -257,10 +261,12 @@ struct SearchTests {
     }
 
     @Test func searchLimitAndOffset() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
+            clock.value = Date(timeIntervalSinceNow: -100)
             for i in 0..<10 {
-                let e = try #require(try await store.captureText("common token \(i)", sourceApp: nil)).entry
-                try await store._test_setTimestamps(id: e.id, lastUsedAt: Date(timeIntervalSinceNow: Double(i - 100)))
+                _ = try #require(try await store.captureText("common token \(i)", sourceApp: nil))
+                clock.advance(1)
             }
             let page1 = try await store.search(SearchQuery(text: "common", limit: 3, offset: 0))
             let page2 = try await store.search(SearchQuery(text: "common", limit: 3, offset: 3))
@@ -341,11 +347,13 @@ struct DeleteTests {
 @Suite("Eviction & retention")
 struct EvictionTests {
     @Test func countEvictionRemovesOldestNonPinned() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
             try await store.setConfig("text.max_entries", value: "3")
+            clock.value = Date(timeIntervalSinceNow: -100)
             for i in 0..<5 {
-                let e = try #require(try await store.captureText("entry \(i)", sourceApp: nil)).entry
-                try await store._test_setTimestamps(id: e.id, lastUsedAt: Date(timeIntervalSinceNow: Double(i - 100)))
+                _ = try #require(try await store.captureText("entry \(i)", sourceApp: nil))
+                clock.advance(1)
             }
             let evicted = try await store.enforceLimits()
             #expect(evicted == 2)
@@ -355,11 +363,13 @@ struct EvictionTests {
     }
 
     @Test func byteSizeEviction() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
             let payload = String(repeating: "x", count: 100) // 101 bytes with suffix digit
+            clock.value = Date(timeIntervalSinceNow: -100)
             for i in 0..<5 {
-                let e = try #require(try await store.captureText("\(payload)\(i)", sourceApp: nil)).entry
-                try await store._test_setTimestamps(id: e.id, lastUsedAt: Date(timeIntervalSinceNow: Double(i - 100)))
+                _ = try #require(try await store.captureText("\(payload)\(i)", sourceApp: nil))
+                clock.advance(1)
             }
             // 5 entries x 101 bytes = 505 bytes; cap at 250 -> keep 2 newest.
             try await store.setConfig("text.max_size", value: "250")
@@ -372,13 +382,15 @@ struct EvictionTests {
     }
 
     @Test func pinnedEntriesAreImmuneToEviction() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
             try await store.setConfig("text.max_entries", value: "2")
             var oldest: Int64 = 0
+            clock.value = Date(timeIntervalSinceNow: -100)
             for i in 0..<4 {
                 let e = try #require(try await store.captureText("pin test \(i)", sourceApp: nil)).entry
-                try await store._test_setTimestamps(id: e.id, lastUsedAt: Date(timeIntervalSinceNow: Double(i - 100)))
                 if i == 0 { oldest = e.id }
+                clock.advance(1)
             }
             _ = try await store.setPinned(true, id: oldest)
             // Pinned rows live outside the budget: 3 non-pinned vs cap 2.
@@ -420,10 +432,12 @@ struct EvictionTests {
     }
 
     @Test func loweringByteCapEvictsOversizeEntryNotWholeHistory() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
+            clock.value = Date(timeIntervalSinceNow: -100)
             for i in 0..<3 {
-                let e = try #require(try await store.captureText("keep me \(i)", sourceApp: nil)).entry
-                try await store._test_setTimestamps(id: e.id, lastUsedAt: Date(timeIntervalSinceNow: Double(i - 100)))
+                _ = try #require(try await store.captureText("keep me \(i)", sourceApp: nil))
+                clock.advance(1)
             }
             let big = try #require(try await store.captureText(String(repeating: "y", count: 500), sourceApp: nil)).entry
             // Cap now smaller than the big (newest) entry alone. The big
@@ -438,10 +452,12 @@ struct EvictionTests {
     }
 
     @Test func imageEvictionDeletesFiles() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
             try await store.setConfig("image.max_entries", value: "1")
+            clock.value = Date(timeIntervalSinceNow: -100)
             let img1 = try #require(try await store.captureImage(data: makePNG(red: 0.1), format: "png", sourceApp: nil)).entry
-            try await store._test_setTimestamps(id: img1.id, lastUsedAt: Date(timeIntervalSinceNow: -100))
+            clock.advance(100)
             let img2 = try #require(try await store.captureImage(data: makePNG(red: 0.9), format: "png", sourceApp: nil)).entry
             let url1 = try #require(await store.imageFileURL(for: img1))
             let thumb1 = try #require(try await store.thumbnailURL(for: img1))
@@ -458,13 +474,13 @@ struct EvictionTests {
     }
 
     @Test func retentionDeletesOldNonPinned() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
+            clock.value = Date(timeIntervalSinceNow: -40 * 86_400)
             let old = try #require(try await store.captureText("ancient history", sourceApp: nil)).entry
             let oldPinned = try #require(try await store.captureText("ancient but pinned", sourceApp: nil)).entry
+            clock.advance(40 * 86_400)
             _ = try await store.captureText("fresh", sourceApp: nil)
-            let fortyDaysAgo = Date(timeIntervalSinceNow: -40 * 86_400)
-            try await store._test_setTimestamps(id: old.id, lastUsedAt: fortyDaysAgo)
-            try await store._test_setTimestamps(id: oldPinned.id, lastUsedAt: fortyDaysAgo)
             _ = try await store.setPinned(true, id: oldPinned.id)
 
             // retention.days = 0 -> never delete.
@@ -786,7 +802,7 @@ struct ShellHistoryStoreTests {
 
     @Test func shortcutCRUDAndDictionary() async throws {
         try await withStore { store, _ in
-            let emailEntry = try #require(try await store.captureText("himanshu.kumar@grofers.com", sourceApp: nil)).entry
+            let emailEntry = try #require(try await store.captureText("user@example.com", sourceApp: nil)).entry
             let zoomEntry = try #require(try await store.captureText("https://zoom.us/j/12345", sourceApp: nil)).entry
 
             _ = try await store.setShortcut(";email", id: emailEntry.id)
@@ -796,13 +812,13 @@ struct ShellHistoryStoreTests {
             #expect(reloaded.shortcut == ";email")
 
             let all = try await store.allShortcuts()
-            #expect(all[";email"] == "himanshu.kumar@grofers.com")
+            #expect(all[";email"] == "user@example.com")
             #expect(all[";zoom"] == "https://zoom.us/j/12345")
 
             // Remove shortcut
             _ = try await store.setShortcut(nil, id: zoomEntry.id)
             let updated = try await store.allShortcuts()
-            #expect(updated[";email"] == "himanshu.kumar@grofers.com")
+            #expect(updated[";email"] == "user@example.com")
             #expect(updated[";zoom"] == nil)
         }
     }

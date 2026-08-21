@@ -20,38 +20,13 @@ enum OutputFormatter {
     }
 
     static func previewText(_ content: String) -> String {
-        var flat = ""
-        flat.reserveCapacity(min(content.count, previewMax + 1))
-        for character in content {
-            if flat.count > previewMax { break }
-            if character == "\n" || character == "\r" || character == "\t" {
-                flat.append(" ")
-            } else if character.unicodeScalars.contains(where: {
-                CharacterSet.controlCharacters.contains($0)
-            }) {
-                continue
-            } else {
-                flat.append(character)
-            }
-        }
-        if flat.count > previewMax {
-            return String(flat.prefix(previewMax - 1)) + "…"
-        }
-        return flat
+        TextSummaries.singleLine(content, maxChars: previewMax)
     }
 
     // MARK: - Time
 
     static func relativeTime(_ date: Date, now: Date = Date()) -> String {
-        let seconds = Int(now.timeIntervalSince(date))
-        switch seconds {
-        case ..<5: return "just now"
-        case ..<60: return "\(seconds)s ago"
-        case ..<3600: return "\(seconds / 60)m ago"
-        case ..<86_400: return "\(seconds / 3600)h ago"
-        case ..<(86_400 * 30): return "\(seconds / 86_400)d ago"
-        default: return dayFormatter.string(from: date)
-        }
+        TextSummaries.relativeTime(date, now: now)
     }
 
     static let dayFormatter = makeFormatter("yyyy-MM-dd")
@@ -77,7 +52,7 @@ enum OutputFormatter {
                 entry.isPinned ? "*" : "",
                 entry.type.rawValue,
                 preview(entry),
-                relativeTime(entry.lastUsedAt),
+                relativeTime(entry.lastUsedAt)
             ])
         }
         let columns = rows[0].count
@@ -135,15 +110,23 @@ enum OutputFormatter {
         )
     }
 
-    /// Pretty-printed JSON with stable (sorted) key order.
-    static func encodeJSON<T: Encodable>(_ value: T) -> String {
+    /// Pretty-printed JSON with stable (sorted) key order. Throws rather than
+    /// masking encoding bugs with a silent "{}".
+    static func encodeJSON<T: Encodable>(_ value: T) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        guard let data = try? encoder.encode(value) else { return "{}" }
-        return String(decoding: data, as: UTF8.self)
+        let data = try encoder.encode(value)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw ClapCoreError.io("JSON encoding produced invalid UTF-8")
+        }
+        return json
     }
 
     static func printEntriesJSON(_ entries: [ClipboardEntry], dataDir: URL) {
-        print(encodeJSON(entries.map { entryJSON($0, dataDir: dataDir) }))
+        do {
+            print(try encodeJSON(entries.map { entryJSON($0, dataDir: dataDir) }))
+        } catch {
+            CLI.fail("JSON encoding failed: \(error.localizedDescription)")
+        }
     }
 }

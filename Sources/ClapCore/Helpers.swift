@@ -1,5 +1,63 @@
 import Foundation
 import CryptoKit
+import UniformTypeIdentifiers
+
+public enum TextSummaries {
+    /// Collapses all whitespace runs and control characters to single spaces,
+    /// trims, then truncates to `maxChars` appending an ellipsis when cut.
+    public static func singleLine(_ s: String, maxChars: Int) -> String {
+        var collapsed = ""
+        var previousWasSpace = true
+        for scalar in s.unicodeScalars {
+            if scalar.properties.isWhitespace || scalar.value < 0x20 || scalar.value == 0x7f {
+                if !previousWasSpace { collapsed.unicodeScalars.append(" ") }
+                previousWasSpace = true
+            } else {
+                collapsed.unicodeScalars.append(scalar)
+                previousWasSpace = false
+            }
+        }
+        let trimmed = collapsed.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count > maxChars else { return trimmed }
+        let cutoff = trimmed.index(trimmed.startIndex, offsetBy: maxChars)
+        return String(trimmed[..<cutoff]) + "…"
+    }
+
+    /// Compact relative time: "now", "5m", "2h", "3d", otherwise "yyyy-MM-dd".
+    public static func relativeTime(_ date: Date, now: Date) -> String {
+        let interval = now.timeIntervalSince(date)
+        let elapsed = interval >= 0 ? interval : -interval
+        let suffix = interval >= 0 ? "" : "?"
+        if elapsed < 60 { return "now" }
+        if elapsed < 3600 { return "\(Int(elapsed / 60))m\(suffix)" }
+        if elapsed < 86_400 { return "\(Int(elapsed / 3600))h\(suffix)" }
+        if elapsed < 7 * 86_400 { return "\(Int(elapsed / 86_400))d\(suffix)" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+}
+
+public enum ImageFormats {
+    private static let explicit: [String: String] = [
+        "png": "public.png",
+        "jpeg": "public.jpeg",
+        "jpg": "public.jpeg",
+        "tiff": "public.tiff",
+        "tif": "public.tiff",
+        "gif": "com.compuserve.gif",
+        "bmp": "com.microsoft.bmp",
+        "webp": "org.webpproject.webp",
+        "heic": "public.heic"
+    ]
+
+    /// Maps a stored image format ("png", "jpeg", ...) to its UTI identifier.
+    /// Returns nil for unknown formats so callers can apply their own
+    /// fallback (e.g. TIFF conversion).
+    public static func uti(forFormat format: String) -> String? {
+        explicit[format.lowercased()]
+    }
+}
 
 public enum TextNormalizer {
     /// Trims leading/trailing whitespace and newlines. Interior whitespace
@@ -37,7 +95,7 @@ public enum ByteSize {
         // Order matters: longest suffixes first.
         let suffixes: [(String, Int64)] = [
             ("gb", 1 << 30), ("mb", 1 << 20), ("kb", 1 << 10),
-            ("g", 1 << 30), ("m", 1 << 20), ("k", 1 << 10), ("b", 1),
+            ("g", 1 << 30), ("m", 1 << 20), ("k", 1 << 10), ("b", 1)
         ]
         var numberPart = trimmed
         var multiplier: Int64 = 1
@@ -96,5 +154,12 @@ public enum SafeRegex {
         let slice = content.count > maxInputLength ? String(content.prefix(maxInputLength)) : content
         let range = NSRange(slice.startIndex..<slice.endIndex, in: slice)
         return regex.firstMatch(in: slice, options: [], range: range) != nil
+    }
+}
+
+extension Array {
+    func chunked(_ size: Int) -> [[Element]] {
+        guard size > 0 else { return [self] }
+        return stride(from: 0, to: count, by: size).map { Array(self[$0..<Swift.min($0 + size, count)]) }
     }
 }

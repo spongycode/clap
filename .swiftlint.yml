@@ -1,0 +1,69 @@
+# clap — SwiftLint configuration.
+# Rules are deliberately conservative: anything enabled here must pass on the
+# current codebase so CI stays green (errors block; warnings stay visible).
+
+included:
+  - Sources
+  - Tests
+  - Package.swift
+
+excluded:
+  - .build
+  - dist
+  - Scripts
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - closure_spacing
+  - first_where
+  - last_where
+  - toggle_bool
+  - contains_over_first_not_nil
+  - sorted_first_last
+
+line_length:
+  warning: 130
+  error: 160
+  ignores_function_declarations: true
+  ignores_comments: true
+
+type_body_length:
+  warning: 400
+  error: 600
+
+function_body_length:
+  warning: 80
+  error: 150
+
+file_length:
+  warning: 900
+  error: 1200
+
+identifier_name:
+  # SQL bind helpers and short math locals use compact names by design.
+  min_length: 1
+  max_length: 60
+  excluded:
+    - id
+    - db
+    - x
+    - y
+
+cyclomatic_complexity:
+  warning: 16
+  error: 25
+
+large_tuple:
+  # Public store APIs intentionally return labeled result tuples.
+  warning: 4
+  error: 5
+
+function_parameter_count:
+  # Row-insert helpers legitimately ship one parameter per column.
+  warning: 11
+  error: 12
+
+nesting:
+  type_level:
+    warning: 3

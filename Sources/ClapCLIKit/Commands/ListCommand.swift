@@ -43,7 +43,7 @@ enum ListCommand {
         }
         guard !entries.isEmpty else {
             print("No entries.")
-            return
+            exit(ExitCode.failure)
         }
         print(OutputFormatter.table(entries))
     }

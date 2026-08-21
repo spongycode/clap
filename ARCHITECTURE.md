@@ -8,15 +8,19 @@ this file.
 ## Targets
 
 - `ClapCore` (library): SQLite storage, FTS5 search, normalization, hashing,
-  dedup, LRU eviction, settings, image file store, stats, doctor checks.
-  **No AppKit/SwiftUI imports** (Foundation + CoreGraphics/ImageIO allowed for
-  thumbnailing).
+  dedup, LRU eviction, settings, image file store, stats, doctor checks, OCR
+  text extraction, and shared text analysis (color/case/Base64/URL/JWT/epoch).
+  **No AppKit/SwiftUI imports** (Foundation + CoreGraphics/ImageIO +
+  UniformTypeIdentifiers + CryptoKit + Vision allowed — Vision powers the
+  injectable `OCREngine`).
 - `ClapApp` (executable): NSApplication accessory app. Pasteboard monitor,
-  Carbon global hotkey (Cmd+Shift+V), SwiftUI floating panel (Classic/Media
-  tabs), menu bar item, settings window.
-- `clap` (executable, Sources/ClapCLI): subcommand CLI. Hand-rolled argument
-  parsing (no external dependencies). May import AppKit only for
-  NSPasteboard writes (`clap copy`).
+  Carbon global hotkey (configurable), SwiftUI floating panel (Classic/Media/
+  Shell/Favs tabs), menu bar item, settings window.
+- `ClapCLIKit` (library): all `clap` command logic and output formatting as a
+  unit-testable library. May import AppKit only for NSPasteboard writes
+  (`clap copy`) and NSWorkspace process probing.
+- `clap` (executable, Sources/ClapCLI): thin entry point delegating to
+  ClapCLIKit.
 
 ## Data locations
 
@@ -26,13 +30,13 @@ this file.
 - Images: `<base>/images/<content_hash>.<ext>` (original data, written atomically).
 - Thumbnails: `<base>/thumbnails/<content_hash>.png` (max 400px long edge).
 
-## Database schema (SQLite, user_version = 1)
+## Database schema (SQLite, user_version = 2)
 
 ```sql
 CREATE TABLE IF NOT EXISTS entries (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    type          TEXT NOT NULL,              -- 'text' | 'image'
-    content       TEXT,                       -- normalized text; NULL for images
+    type          TEXT NOT NULL,              -- 'text' | 'image' | 'shell'
+    content       TEXT,                       -- normalized text / OCR text; NULL for images
     image_path    TEXT,                       -- relative path under images/; NULL for text
     image_format  TEXT,                       -- 'png','jpeg','tiff',...
     content_hash  TEXT NOT NULL,              -- 64-bit FNV-1a hex for text, SHA256 hex for images
@@ -40,8 +44,10 @@ CREATE TABLE IF NOT EXISTS entries (
     last_used_at  REAL NOT NULL,
     size_bytes    INTEGER NOT NULL,
     is_pinned     INTEGER NOT NULL DEFAULT 0,
+    is_favorite   INTEGER NOT NULL DEFAULT 0,
     use_count     INTEGER NOT NULL DEFAULT 1,
-    source_app    TEXT                        -- bundle id of frontmost app at capture, optional
+    source_app    TEXT,                       -- bundle id of frontmost app at capture, optional
+    shortcut      TEXT                        -- snippet abbreviation trigger, e.g. ';email'
 );
 -- Non-unique: dedup is enforced by lookup-inside-transaction (BEGIN IMMEDIATE
 -- serializes writers across processes) with content equality verified, so a
@@ -49,6 +55,8 @@ CREATE TABLE IF NOT EXISTS entries (
 CREATE INDEX IF NOT EXISTS idx_entries_hash ON entries(type, content_hash);
 CREATE INDEX IF NOT EXISTS idx_entries_lru  ON entries(is_pinned, last_used_at);
 CREATE INDEX IF NOT EXISTS idx_entries_type ON entries(type, last_used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entries_shortcut ON entries(shortcut);
+CREATE INDEX IF NOT EXISTS idx_entries_fav ON entries(is_favorite, last_used_at DESC);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
     content, content='entries', content_rowid='id', tokenize='unicode61'
@@ -63,6 +71,14 @@ CREATE TABLE IF NOT EXISTS stats_counters (
     key   TEXT PRIMARY KEY,                   -- e.g. 'events:2026-08-15', 'dups:2026-08-15'
     value INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS entry_tags (
+    entry_id   INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    tag        TEXT NOT NULL COLLATE NOCASE,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (entry_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entry_tags_entry ON entry_tags(entry_id);
 ```
 
 ## Config keys (strings in `config` table, typed accessors in Settings)
@@ -126,15 +142,18 @@ public struct StoreStats: Sendable {
 /// The single entry point. An actor so all DB access is serialized per process.
 /// Multi-process safety comes from SQLite WAL + busy_timeout.
 public actor ClipboardStore {
-    public init(dataDir: URL? = nil) throws   // nil → default/env resolution
+    public init(dataDir: URL? = nil,
+                now: @escaping @Sendable () -> Date = { Date() },
+                ocr: any OCREngine = VisionOCREngine()) throws
     public nonisolated let dataDir: URL
 
     // Capture path (fast): normalize → hash → indexed lookup → insert or touch.
     // Returns the entry and whether it was a duplicate (touched, not inserted).
+    // OCR runs OUTSIDE the write transaction and off the actor executor.
     @discardableResult
     public func captureText(_ raw: String, sourceApp: String?) throws -> (entry: ClipboardEntry, wasDuplicate: Bool)?  // nil if empty after normalization
     @discardableResult
-    public func captureImage(data: Data, format: String, sourceApp: String?) throws -> (entry: ClipboardEntry, wasDuplicate: Bool)?
+    public func captureImage(data: Data, format: String, sourceApp: String?) async throws -> (entry: ClipboardEntry, wasDuplicate: Bool)?
 
     // Queries
     public func list(type: EntryType?, limit: Int, offset: Int) throws -> [ClipboardEntry]
@@ -181,6 +200,36 @@ public enum SafeRegex {
     /// Compiles NSRegularExpression; evaluates with a match-count/length guard.
     /// Never throws at match time; invalid pattern → .invalidPattern error on compile.
     public static func compile(_ pattern: String) throws -> NSRegularExpression
+}
+public enum TextSummaries {
+    public static func singleLine(_ s: String, maxChars: Int) -> String   // collapse ws/control chars, "…" truncate
+    public static func relativeTime(_ date: Date, now: Date) -> String    // "now", "5m", "2h", "3d", else "yyyy-MM-dd"
+}
+public enum ImageFormats {
+    public static func uti(forFormat format: String) -> String?           // 'gif' → 'com.compuserve.gif'
+}
+public enum ConfigKey { /* typed constants for every config-table key */ }
+
+/// Injectable OCR seam (Vision-backed default; tests use stubs).
+public protocol OCREngine: Sendable {
+    func recognizeText(from imageData: Data) async -> String?
+}
+public struct VisionOCREngine: OCREngine {}
+
+// Shared clipboard content analysis (used by app UI and available to CLI):
+public struct ParsedColor: Sendable, Equatable {}   // r/g/b/a components
+public enum ColorParser { public static func parse(_ raw: String?) -> ParsedColor? }
+public enum CaseConverter { /* camel/pascal/snake/kebab/constant/upper/lower/title */ }
+public enum TextTransformer { /* Base64 + URL encode/decode with length guards */ }
+public struct JWTData: Sendable, Equatable { public static func parse(_ text: String?) -> JWTData? }
+public struct EpochData: Sendable, Equatable { public static func parse(_ text: String?) -> EpochData? }
+
+// IPC names shared by both processes:
+public enum ClapIdentity { public static let bundleID = "com.spongycode.clap" }
+public enum IPCNotifications {
+    public static let openUI = "com.spongycode.clap.openUI"
+    public static let storeChanged = "com.spongycode.clap.storeChanged"
+    public static let configChanged = "com.spongycode.clap.configChanged"
 }
 ```
 
@@ -291,10 +340,20 @@ clap pause / clap resume
 - All commands honor `--data-dir <path>` and `CLAP_DATA_DIR`.
 - Exit codes: 0 ok, 1 not found / no match, 2 usage error.
 
-## Testing
+## Testing & quality gates
 
-Tests use a temp `CLAP_DATA_DIR`. Cover: normalization, hashing stability,
-dedup (capture same text twice → 1 row, recency bumped), recency ordering,
-count eviction, byte-size eviction, pinned immunity, clear, search (terms,
-phrase, type filter), regex search incl. invalid pattern error, ByteSize
-parse/format, SearchQuery.parse, retention.
+Tests use a temp `CLAP_DATA_DIR` (via `withStore`) plus injected `now:` clock
+and stub `OCREngine`. Cover: normalization, hashing stability, dedup (capture
+same text twice → 1 row, recency bumped), recency ordering, count eviction,
+byte-size eviction, pinned immunity, clear, search (terms, phrase, type
+filter), regex search incl. invalid pattern error, ByteSize parse/format,
+SearchQuery.parse, retention, OCR seam (mocked engine stores searchable text),
+injected-clock determinism, text analysis (color/case/transform/JWT/epoch),
+TextSummaries, ImageFormats, CLI ArgParser/OutputFormatter, and the app's
+AppState logic (hover-selection gate, tab→query mapping).
+
+CI (`.github/workflows/ci.yml`) enforces three gates on every push:
+`swift build -Xswiftc -warnings-as-errors`, full `swift test`, and a zero-
+violation `swiftlint` pass (config in `.swiftlint.yml`). The UI is English-
+only by design; SwiftUI text literals are already localization-ready should
+translations ever be added.

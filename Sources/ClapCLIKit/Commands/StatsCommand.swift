@@ -49,7 +49,11 @@ enum StatsCommand {
                 duplicatesAvoidedToday: stats.duplicatesAvoidedToday,
                 oldestEntry: stats.oldestEntry.map { OutputFormatter.iso8601.string(from: $0) }
             )
-            print(OutputFormatter.encodeJSON(json))
+            do {
+                print(try OutputFormatter.encodeJSON(json))
+            } catch {
+                CLI.fail("JSON encoding failed: \(error.localizedDescription)")
+            }
             return
         }
 
@@ -66,7 +70,7 @@ enum StatsCommand {
             ("Total storage", ByteSize.format(totalBytes)),
             ("Clipboard events today", String(stats.eventsToday)),
             ("Duplicates avoided", String(stats.duplicatesAvoidedToday)),
-            ("Oldest entry", oldest),
+            ("Oldest entry", oldest)
         ]
         let labelWidth = rows.map { $0.0.count }.max() ?? 0
         print("Clap Statistics")

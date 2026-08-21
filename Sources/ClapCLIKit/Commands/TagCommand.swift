@@ -27,9 +27,10 @@ enum TagCommand {
 
         switch subcommand {
         case "add":
-            guard rest.count >= 2, let id = Int64(rest[0]) else {
+            guard rest.count >= 2 else {
                 CLI.usageError("clap tag add requires <id> and <tag>", usage: usage)
             }
+            let id = validatedID(rest[0], action: "add")
             let tag = rest[1]
             await CLI.run {
                 let store = try context.makeStore()
@@ -42,9 +43,10 @@ enum TagCommand {
             }
 
         case "remove", "rm":
-            guard rest.count >= 2, let id = Int64(rest[0]) else {
+            guard rest.count >= 2 else {
                 CLI.usageError("clap tag remove requires <id> and <tag>", usage: usage)
             }
+            let id = validatedID(rest[0], action: "remove")
             let tag = rest[1]
             await CLI.run {
                 let store = try context.makeStore()
@@ -57,9 +59,10 @@ enum TagCommand {
             }
 
         case "set":
-            guard rest.count >= 2, let id = Int64(rest[0]) else {
+            guard rest.count >= 2 else {
                 CLI.usageError("clap tag set requires <id> and at least one <tag>", usage: usage)
             }
+            let id = validatedID(rest[0], action: "set")
             let tags = Array(rest.dropFirst())
             await CLI.run {
                 let store = try context.makeStore()
@@ -68,19 +71,24 @@ enum TagCommand {
             }
 
         case "list", "ls":
-            if let first = rest.first, let id = Int64(first) {
+            if let first = rest.first {
+                let id = validatedID(first, action: "list")
                 await listTagsForEntry(id: id, context: context)
             } else {
                 await listAllTags(context: context)
             }
 
         default:
-            if let id = Int64(subcommand) {
-                await listTagsForEntry(id: id, context: context)
-            } else {
-                CLI.usageError("unknown tag subcommand '\(subcommand)'", usage: usage)
-            }
+            CLI.usageError("unknown tag subcommand '\(subcommand)'", usage: usage)
         }
+    }
+
+    /// Same validation contract as ArgParser.requiredID: positive integer.
+    private static func validatedID(_ raw: String, action: String) -> Int64 {
+        guard let id = Int64(raw), id > 0 else {
+            CLI.usageError("clap tag \(action) requires a numeric entry id", usage: usage)
+        }
+        return id
     }
 
     private static func listAllTags(context: CLIContext) async {

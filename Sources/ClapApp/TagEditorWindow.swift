@@ -4,17 +4,17 @@ import ClapCore
 
 /// Manages the dedicated titled window for managing tags on an entry.
 @MainActor
-final class TagWindowController: NSObject, NSWindowDelegate {
+final class TagWindowController: UtilityWindowController {
     static let shared = TagWindowController()
 
-    private var window: NSWindow?
-    private var currentEntry: ClipboardEntry?
+    private init() {
+        super.init(title: "Manage Tags & Pinboards",
+                   contentRect: NSRect(x: 0, y: 0, width: 440, height: 320))
+    }
 
     func show(for entry: ClipboardEntry, state: AppState) {
-        currentEntry = entry
-
         let allTags = state.availableTags.map(\.tag)
-        let view = TagEditorView(
+        show(rootView: TagEditorView(
             entry: entry,
             suggestedTags: allTags,
             onSave: { [weak self] newTags in
@@ -24,29 +24,7 @@ final class TagWindowController: NSObject, NSWindowDelegate {
             onCancel: { [weak self] in
                 self?.close()
             }
-        )
-
-        if window == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 440, height: 320),
-                styleMask: [.titled, .closable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "Manage Tags & Pinboards"
-            window.isReleasedWhenClosed = false
-            window.delegate = self
-            self.window = window
-        }
-
-        window?.contentView = NSHostingView(rootView: view)
-        window?.center()
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
-    }
-
-    func close() {
-        window?.close()
+        ))
     }
 }
 
@@ -152,10 +130,11 @@ struct TagEditorView: View {
                                         .padding(.vertical, 3)
                                         .background(
                                             Capsule()
-                                                .fill(Color.primary.opacity(0.06))
+                                                .fill(Color.primary.opacity(AppAlpha.Fill.soft))
                                                 .overlay(
                                                     Capsule()
-                                                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                                                    .strokeBorder(Color.primary.opacity(AppAlpha.Stroke.panelBorder),
+                                                                  lineWidth: 0.5)
                                                 )
                                         )
                                     }

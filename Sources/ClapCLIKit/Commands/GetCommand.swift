@@ -23,14 +23,20 @@ enum GetCommand {
         }
 
         if parsed.has("--json") {
-            print(OutputFormatter.encodeJSON(OutputFormatter.entryJSON(entry, dataDir: dataDir)))
+            do {
+                print(try OutputFormatter.encodeJSON(OutputFormatter.entryJSON(entry, dataDir: dataDir)))
+            } catch {
+                CLI.fail("JSON encoding failed: \(error.localizedDescription)")
+            }
             return
         }
 
-        let imageAbsolutePath = entry.imagePath.map {
-            dataDir.appendingPathComponent("images", isDirectory: true)
-                .appendingPathComponent($0).path
-        }
+        let imageAbsolutePath: String? = entry.type == .image
+            ? entry.imagePath.map {
+                dataDir.appendingPathComponent("images", isDirectory: true)
+                    .appendingPathComponent($0).path
+            }
+            : nil
 
         // Pipe-friendly: raw content only when stdout is not a TTY.
         guard CLI.stdoutIsTTY else {
@@ -52,7 +58,7 @@ enum GetCommand {
             ("Use count", String(entry.useCount)),
             ("Size", ByteSize.format(entry.sizeBytes)),
             ("Hash", entry.contentHash),
-            ("Source app", entry.sourceApp ?? "—"),
+            ("Source app", entry.sourceApp ?? "—")
         ] + (entry.type == .image
                 ? [("Format", entry.imageFormat ?? "?"), ("File", imageAbsolutePath ?? "—")]
                 : [])

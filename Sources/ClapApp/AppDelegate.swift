@@ -5,7 +5,7 @@ import os
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
-    private let logger = Logger(subsystem: "com.spongycode.clap", category: "app")
+    private let logger = Logger(subsystem: ClapIdentity.bundleID, category: "app")
 
     private var store: ClipboardStore!
     private var monitor: PasteboardMonitor!
@@ -39,6 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appState = AppState(store: store, monitor: monitor)
         panelController = PanelController(appState: appState)
         settingsController = SettingsWindowController(store: store)
+        settingsController.healthProvider = { [weak self] in
+            (self?.hotKey?.isRegistered ?? false, SnippetExpander.shared.isHealthy)
+        }
         menuBar = MenuBarController(store: store, appState: appState)
 
         appState.onCloseRequest = { [weak self] in self?.panelController.hide(reactivatePreviousApp: true) }
@@ -53,16 +56,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installDistributedObservers()
 
         Task { [weak self, monitor, shellMonitor, store] in
-            let savedKey = (try? await store.config("ui.hotkey")) ?? "cmd+shift+v"
+            let savedKey = (try? await store.config(ConfigKey.uiHotkey)) ?? HotKeyDefinition.defaultID
             let def = HotKeyDefinition.find(savedKey)
             self?.hotKey.register(definition: def)
             self?.menuBar.updateShortcut(def)
+            if let hotKey = self?.hotKey, !hotKey.isRegistered {
+                self?.logger.fault("global hotkey registration failed: \(hotKey.statusDescription, privacy: .public)")
+            }
 
             await monitor?.refreshConfig()
             await monitor?.start()
             await shellMonitor?.start()
 
-            let snippetsEnabled = (try? await store.config("snippets.enabled")) != "false"
+            // Settings writes "1"/"0"; anything but "0" means enabled.
+            let snippetsEnabled = (try? await store.config(ConfigKey.snippetsEnabled)) != "0"
             SnippetExpander.shared.setEnabled(snippetsEnabled)
             let shortcuts = (try? await store.allShortcuts()) ?? [:]
             SnippetExpander.shared.updateSnippets(shortcuts)
@@ -75,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         SnippetExpander.shared.stop()
+        workers.stop()
         Task { [monitor, shellMonitor] in
             await monitor?.stop()
             await shellMonitor?.stop()
@@ -101,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 await self.monitor.refreshConfig()
                 await self.shellMonitor.refreshConfig()
-                let savedKey = (try? await self.store.config("ui.hotkey")) ?? "cmd+shift+v"
+                let savedKey = (try? await self.store.config(ConfigKey.uiHotkey)) ?? HotKeyDefinition.defaultID
                 let def = HotKeyDefinition.find(savedKey)
                 self.hotKey.register(definition: def)
                 self.menuBar.updateShortcut(def)
@@ -120,7 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.panelController.show()
                 if ProcessInfo.processInfo.environment["CLAP_DEBUG_SNAPSHOT_TAB"] == "media" {
-                    self.appState.tab = .media
+                    self.appState.selectTab(.media)
                 }
                 // Select the first row so the preview window appears too.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {

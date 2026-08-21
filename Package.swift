@@ -7,8 +7,8 @@ let package = Package(
         .macOS(.v14)
     ],
     targets: [
-        // Core engine: database, search, dedup, eviction, settings, image store.
-        // No UI. Shared by the app and the CLI.
+        // Core engine: database, search, dedup, eviction, settings, image store,
+        // text analysis. No UI. Shared by the app and the CLI.
         .target(
             name: "ClapCore",
             swiftSettings: [.swiftLanguageMode(.v5)],
@@ -20,10 +20,17 @@ let package = Package(
             dependencies: ["ClapCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // CLI command logic as a library so it is unit-testable; the executable
+        // target below stays a thin entry point.
+        .target(
+            name: "ClapCLIKit",
+            dependencies: ["ClapCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         // Command-line interface. The binary is named `clap`.
         .executableTarget(
             name: "clap",
-            dependencies: ["ClapCore"],
+            dependencies: ["ClapCLIKit"],
             path: "Sources/ClapCLI",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
@@ -32,5 +39,17 @@ let package = Package(
             dependencies: ["ClapCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .testTarget(
+            name: "ClapCLITests",
+            dependencies: ["ClapCLIKit"],
+            path: "Tests/ClapCLITests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "ClapAppTests",
+            dependencies: ["ClapApp"],
+            path: "Tests/ClapAppTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        )
     ]
 )

@@ -21,7 +21,7 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(AppAlpha.Stroke.panelBorder), lineWidth: 1)
         )
         .onAppear { searchFocused = true }
         .onChange(of: state.searchFocusToken) { _, _ in searchFocused = true }
@@ -39,10 +39,13 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
 
                     TextField(state.regexMode ? "Regex search…" : "Search…",
-                              text: $state.rawQuery)
+                              text: Binding(
+                                get: { state.rawQuery },
+                                set: { state.queryChanged($0) }))
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .focused($searchFocused)
+                        .accessibilityIdentifier("search-field")
 
                     regexToggle
                 }
@@ -53,7 +56,7 @@ struct ContentView: View {
                         .fill(Color.primary.opacity(0.05))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                                .strokeBorder(Color.primary.opacity(AppAlpha.Stroke.hairline), lineWidth: 0.5)
                         )
                 )
 
@@ -77,6 +80,38 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .overlay(alignment: .bottom) {
+            if let message = state.transientError {
+                TransientErrorBanner(message: message)
+            }
+        }
+    }
+
+    private struct TransientErrorBanner: View {
+        @EnvironmentObject private var state: AppState
+        let message: String
+
+        var body: some View {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                Text(message)
+                Button {
+                    state.dismissTransientError()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss error")
+            }
+            .font(.caption)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color.red.opacity(0.9)))
+            .padding(.bottom, 8)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .accessibilityIdentifier("error-banner")
+        }
     }
 
     /// Horizontal scrolling tag filter pills bar in the Favs / Pinboards tab
@@ -89,7 +124,7 @@ struct ContentView: View {
                     count: state.selectedTag == nil ? (state.entries.count + state.pinned.count) : nil,
                     isSelected: state.selectedTag == nil
                 ) {
-                    state.selectedTag = nil
+                    state.selectTag(nil)
                 }
 
                 // Tag Pills
@@ -99,7 +134,7 @@ struct ContentView: View {
                         count: item.count,
                         isSelected: state.selectedTag?.lowercased() == item.tag.lowercased()
                     ) {
-                        state.selectedTag = item.tag
+                        state.selectTag(item.tag)
                     }
                 }
             }
@@ -113,7 +148,8 @@ struct ContentView: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Text(title)
-                    .font(.system(size: 11.5, weight: isSelected ? .bold : .medium, design: title.hasPrefix("#") ? .monospaced : .default))
+                    .font(.system(size: 11.5, weight: isSelected ? .bold : .medium,
+                                  design: title.hasPrefix("#") ? .monospaced : .default))
                 if let count {
                     Text("\(count)")
                         .font(.system(size: 10, weight: isSelected ? .bold : .regular))
@@ -122,7 +158,7 @@ struct ContentView: View {
                         .padding(.vertical, 1)
                         .background(
                             Capsule()
-                                .fill(isSelected ? Color.white.opacity(0.2) : Color.primary.opacity(0.06))
+                                .fill(isSelected ? Color.white.opacity(0.2) : Color.primary.opacity(AppAlpha.Fill.soft))
                         )
                 }
             }
@@ -131,7 +167,7 @@ struct ContentView: View {
             .foregroundStyle(isSelected ? Color.white : Color.primary)
             .background(
                 Capsule()
-                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.06))
+                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(AppAlpha.Fill.soft))
             )
         }
         .buttonStyle(.plain)
@@ -150,13 +186,15 @@ struct ContentView: View {
                     .frame(width: 28, height: 28)
                     .background(
                         Circle()
-                            .fill(isHovered ? Color.primary.opacity(0.09) : Color.clear)
+                            .fill(isHovered ? Color.primary.opacity(AppAlpha.Hover.fill) : Color.clear)
                     )
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .onHover { isHovered = $0 }
             .help("Settings")
+            .accessibilityLabel("Settings")
+            .accessibilityIdentifier("settings-button")
         }
     }
 
@@ -164,22 +202,22 @@ struct ContentView: View {
     private var customTabBar: some View {
         HStack(spacing: 2) {
             TabButton(icon: "doc.on.clipboard", tab: .classic, currentTab: state.tab, shortcut: "⌘1", label: "Classic") {
-                state.tab = .classic
+                state.selectTab(.classic)
             }
             TabButton(icon: "photo", tab: .media, currentTab: state.tab, shortcut: "⌘2", label: "Media") {
-                state.tab = .media
+                state.selectTab(.media)
             }
             TabButton(icon: "terminal", tab: .shell, currentTab: state.tab, shortcut: "⌘3", label: "Shell") {
-                state.tab = .shell
+                state.selectTab(.shell)
             }
             TabButton(icon: "heart.fill", tab: .favs, currentTab: state.tab, shortcut: "⌘4", label: "Favs") {
-                state.tab = .favs
+                state.selectTab(.favs)
             }
         }
         .padding(2.5)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+                .fill(Color.primary.opacity(AppAlpha.Fill.soft))
         )
     }
 
@@ -209,7 +247,8 @@ struct ContentView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(
-                                isSelected ? Color.accentColor : (isHovered ? Color.primary.opacity(0.09) : Color.clear)
+                                isSelected ? Color.accentColor
+                                    : (isHovered ? Color.primary.opacity(AppAlpha.Hover.fill) : Color.clear)
                             )
                             .shadow(color: isSelected ? Color.accentColor.opacity(0.3) : Color.clear, radius: 2, y: 1)
                     )
@@ -218,12 +257,19 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .onHover { isHovered = $0 }
             .help("\(label) (\(shortcut))")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(label) tab")
+            .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+            .accessibilityIdentifier("tab-\(tab.rawValue)")
         }
     }
 
     /// Regex on/off toggle with hover highlight and active state
     private var regexToggle: some View {
-        RegexToggle(isOn: $state.regexMode)
+        RegexToggle(isOn: Binding(
+            get: { state.regexMode },
+            set: { state.setRegexMode($0) }
+        ))
     }
 
     private struct RegexToggle: View {
@@ -246,7 +292,9 @@ struct ContentView: View {
                             .fill(
                                 isOn
                                     ? Color.green.opacity(isHovered ? 0.24 : 0.16)
-                                    : (isHovered ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06))
+                                    : (isHovered
+                                        ? Color.primary.opacity(AppAlpha.Hover.strongFill)
+                                        : Color.primary.opacity(AppAlpha.Fill.soft))
                             )
                     )
                     .overlay(
@@ -264,6 +312,10 @@ struct ContentView: View {
             .onHover { isHovered = $0 }
             .help(isOn ? "Regex search on (⌘R to turn off)"
                        : "Regex search off (⌘R to turn on)")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Regex search mode")
+            .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
+            .accessibilityIdentifier("regex-toggle")
         }
     }
 
@@ -367,23 +419,25 @@ struct SectionHeaderView: View {
 struct MediaGridView: View {
     @EnvironmentObject private var state: AppState
 
-    private let columns = Array(
-        repeating: GridItem(.flexible(), spacing: 10),
-        count: 4
-    )
-
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(state.entries) { entry in
-                        MediaCell(entry: entry)
+        GeometryReader { geometry in
+            let columnCount = max(2, Int(geometry.size.width / 160))
+            let columns = Array(
+                repeating: GridItem(.flexible(), spacing: 10),
+                count: columnCount
+            )
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(state.entries) { entry in
+                            MediaCell(entry: entry)
+                        }
                     }
+                    .padding(12)
                 }
-                .padding(12)
-            }
-            .onChange(of: state.selectedID) { _, id in
-                if let id, !state.selectionCameFromPointer { proxy.scrollTo(id) }
+                .onChange(of: state.selectedID) { _, id in
+                    if let id, !state.selectionCameFromPointer { proxy.scrollTo(id) }
+                }
             }
         }
     }

@@ -31,59 +31,95 @@ final class AppState: ObservableObject {
     /// Set by AppDelegate — opens the Settings window.
     var onOpenSettings: (() -> Void)?
 
-    @Published var tab: Tab = .classic {
-        didSet {
-            guard oldValue != tab else { return }
-            selectedID = nil
-            reload()
-        }
-    }
-    @Published var rawQuery: String = "" {
-        didSet {
-            guard !suppressSearchTrigger, oldValue != rawQuery else { return }
-            scheduleSearch()
-        }
-    }
+    @Published private(set) var tab: Tab = .classic
+    /// Search text as typed. Mutate through `queryChanged(_:)` so the
+    /// debounced search fires; direct writes stay silent (panel reset).
+    @Published private(set) var rawQuery: String = ""
     /// Regex mode (⌘R / the .* button): the whole query is a regex pattern.
     /// Sticky for the app's lifetime, not persisted.
-    @Published var regexMode = false {
-        didSet {
-            guard oldValue != regexMode else { return }
-            if !trimmedQuery.isEmpty { reload() }
-        }
-    }
+    @Published private(set) var regexMode = false
     @Published private(set) var pinned: [ClipboardEntry] = []
     @Published private(set) var entries: [ClipboardEntry] = []
     @Published var selectedID: Int64?
     @Published private(set) var searchError: String?
     /// Selected tag in Favorites / Pinboards tab (nil = All)
-    @Published var selectedTag: String? = nil {
-        didSet {
-            guard oldValue != selectedTag else { return }
-            selectedID = nil
-            reload()
-        }
-    }
+    @Published private(set) var selectedTag: String?
     /// Available tags across the store with their entry counts
     @Published private(set) var availableTags: [(tag: String, count: Int)] = []
     /// Incremented to move keyboard focus into the search field.
     @Published var searchFocusToken = 0
+    /// Last failed store mutation, shown as a dismissable banner. Auto-clears.
+    @Published private(set) var transientError: String?
+
+    func dismissTransientError() {
+        transientError = nil
+    }
+
+    // MARK: - UI intents (explicit state transitions)
+
+    func selectTab(_ newTab: Tab) {
+        guard tab != newTab else { return }
+        tab = newTab
+        selectedID = nil
+        reload()
+    }
+
+    func selectTag(_ tag: String?) {
+        guard selectedTag != tag else { return }
+        selectedTag = tag
+        selectedID = nil
+        reload()
+    }
+
+    func setRegexMode(_ enabled: Bool) {
+        guard regexMode != enabled else { return }
+        regexMode = enabled
+        if !trimmedQuery.isEmpty { reload() }
+    }
+
+    /// Live search-text updates from the field; debounced reload.
+    func queryChanged(_ newValue: String) {
+        guard rawQuery != newValue else { return }
+        rawQuery = newValue
+        scheduleSearch()
+    }
 
     static let pageSize = 100
 
-    private var suppressSearchTrigger = false
     private var generation = 0
     private var fetchedCount = 0          // rows fetched from the store (pre-dedup)
     private var reachedEnd = false
     private var isLoadingMore = false
     private var searchDebounceTask: Task<Void, Never>?
-    private let thumbnailCache = NSCache<NSNumber, NSImage>()
-    private let logger = Logger(subsystem: "com.spongycode.clap", category: "ui")
+    private var transientErrorTask: Task<Void, Never>?
+    let thumbnailCache = NSCache<NSNumber, NSImage>()
+    let logger = Logger(subsystem: ClapIdentity.bundleID, category: "ui")
 
     init(store: ClipboardStore, monitor: PasteboardMonitor) {
         self.store = store
         self.monitor = monitor
         thumbnailCache.countLimit = 300
+    }
+
+    /// Runs a store mutation, surfacing failures instead of swallowing them:
+    /// logs at fault level and shows a transient banner in the UI.
+    func perform(_ label: String, _ op: () async throws -> Void) async {
+        do {
+            try await op()
+        } catch {
+            logger.fault("\(label, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            showTransientError(String(localized: "\(label) failed"))
+        }
+    }
+
+    func showTransientError(_ message: String) {
+        transientError = message
+        transientErrorTask?.cancel()
+        transientErrorTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Timing.errorBannerResetNanos)
+            guard !Task.isCancelled else { return }
+            self?.transientError = nil
+        }
     }
 
     // MARK: - Derived state
@@ -100,13 +136,14 @@ final class AppState: ObservableObject {
 
     // MARK: - Lifecycle
 
-    /// Called right before the panel is shown: reset search, reload page one.
+    /// Called right before the panel is shown: reset search, reload page one,
+    /// and disarm hover selection until the pointer moves again.
     func panelWillShow() {
         searchDebounceTask?.cancel()
-        suppressSearchTrigger = true
         rawQuery = ""
-        suppressSearchTrigger = false
         selectedID = nil
+        pointerArmed = false
+        pendingPointerEntryID = nil
         reload()
     }
 
@@ -115,7 +152,7 @@ final class AppState: ObservableObject {
     private func scheduleSearch() {
         searchDebounceTask?.cancel()
         searchDebounceTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: Timing.searchDebounceNanos)
             guard !Task.isCancelled else { return }
             self?.reload()
         }
@@ -144,6 +181,25 @@ final class AppState: ObservableObject {
         return query
     }
 
+    /// The default (no-search) query for a tab, or nil when the tab needs
+    /// special handling (Classic's pinned section). Pure and internal so the
+    /// tab→query mapping is unit-testable.
+    static func defaultQuery(tab: Tab, tag: String?, offset: Int) -> SearchQuery? {
+        switch tab {
+        case .classic:
+            return SearchQuery(types: [.text, .image], limit: Self.pageSize, offset: offset)
+        case .media:
+            return SearchQuery(type: .image, limit: Self.pageSize, offset: offset)
+        case .shell:
+            return SearchQuery(type: .shell, limit: Self.pageSize, offset: offset)
+        case .favs:
+            if let tag {
+                return SearchQuery(tag: tag, limit: Self.pageSize, offset: offset)
+            }
+            return SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: offset)
+        }
+    }
+
     /// Reloads page one for the current tab + query.
     func reload() {
         generation += 1
@@ -159,21 +215,13 @@ final class AppState: ObservableObject {
                 let fetched: [ClipboardEntry]
                 if let query {
                     fetched = try await self.store.search(query)
+                } else if currentTab == .classic {
+                    newPinned = try await self.store.search(SearchQuery(pinnedOnly: true, limit: 50))
+                    fetched = try await self.store.search(
+                        Self.defaultQuery(tab: currentTab, tag: currentTag, offset: 0)!)
                 } else {
-                    if currentTab == .classic {
-                        newPinned = try await self.store.search(SearchQuery(pinnedOnly: true, limit: 50))
-                        fetched = try await self.store.search(SearchQuery(types: [.text, .image], limit: Self.pageSize, offset: 0))
-                    } else if currentTab == .media {
-                        fetched = try await self.store.list(type: .image, limit: Self.pageSize, offset: 0)
-                    } else if currentTab == .shell {
-                        fetched = try await self.store.list(type: .shell, limit: Self.pageSize, offset: 0)
-                    } else { // .favs
-                        if let currentTag {
-                            fetched = try await self.store.search(SearchQuery(tag: currentTag, limit: Self.pageSize, offset: 0))
-                        } else {
-                            fetched = try await self.store.search(SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: 0))
-                        }
-                    }
+                    fetched = try await self.store.search(
+                        Self.defaultQuery(tab: currentTab, tag: currentTag, offset: 0)!)
                 }
                 guard gen == self.generation else { return }
                 self.searchError = nil
@@ -223,18 +271,9 @@ final class AppState: ObservableObject {
                 let fetched: [ClipboardEntry]
                 if let query {
                     fetched = try await self.store.search(query)
-                } else if currentTab == .classic {
-                    fetched = try await self.store.search(SearchQuery(types: [.text, .image], limit: Self.pageSize, offset: offset))
-                } else if currentTab == .media {
-                    fetched = try await self.store.list(type: .image, limit: Self.pageSize, offset: offset)
-                } else if currentTab == .shell {
-                    fetched = try await self.store.list(type: .shell, limit: Self.pageSize, offset: offset)
-                } else { // .favs
-                    if let currentTag {
-                        fetched = try await self.store.search(SearchQuery(tag: currentTag, limit: Self.pageSize, offset: offset))
-                    } else {
-                        fetched = try await self.store.search(SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: offset))
-                    }
+                } else {
+                    fetched = try await self.store.search(
+                        Self.defaultQuery(tab: currentTab, tag: currentTag, offset: offset)!)
                 }
                 guard gen == self.generation else { return }
                 self.fetchedCount += fetched.count
@@ -255,9 +294,42 @@ final class AppState: ObservableObject {
     /// a hovered row would yank the list around under the cursor.
     private(set) var selectionCameFromPointer = false
 
+    /// Hover-selection gate: when the panel opens under a stationary cursor,
+    /// the row's tracking area fires immediately and would steal the
+    /// selection from the newest entry (breaking blind paste). Hover may not
+    /// change the selection until the pointer physically moves after show().
+    private(set) var pointerArmed = false
+
+    /// The row the pointer was over when the panel opened (captured from the
+    /// initial hover event) or most recently entered while disarmed. Applied
+    /// the moment the pointer moves, so a tiny movement selects the row
+    /// already under the cursor — no leave/re-enter needed.
+    private var pendingPointerEntryID: Int64?
+
+    func armPointer() {
+        guard !pointerArmed else { return }
+        pointerArmed = true
+        if let pending = pendingPointerEntryID {
+            selectionCameFromPointer = true
+            selectedID = pending
+        }
+    }
+
+    /// Row hover tracking. While disarmed the hovered row is only remembered;
+    /// once armed it becomes the selection immediately.
+    func hoverChanged(_ id: Int64, hovering: Bool) {
+        if hovering {
+            pendingPointerEntryID = id
+            guard pointerArmed else { return }
+            selectionCameFromPointer = true
+            selectedID = id
+        } else if pendingPointerEntryID == id {
+            pendingPointerEntryID = nil
+        }
+    }
+
     func selectFromPointer(_ id: Int64) {
-        selectionCameFromPointer = true
-        selectedID = id
+        hoverChanged(id, hovering: true)
     }
 
     func moveSelection(_ delta: Int) {
@@ -279,7 +351,7 @@ final class AppState: ObservableObject {
         guard let entry = selectedEntry else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.store.setPinned(!entry.isPinned, id: entry.id)
+            await self.perform("Pin") { try await self.store.setPinned(!entry.isPinned, id: entry.id) }
             IPC.post(.storeChanged)
             self.reload()
         }
@@ -289,7 +361,7 @@ final class AppState: ObservableObject {
         guard let entry = selectedEntry else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.store.setFavorite(!entry.isFavorite, id: entry.id)
+            await self.perform("Favorite") { try await self.store.setFavorite(!entry.isFavorite, id: entry.id) }
             IPC.post(.storeChanged)
             self.reload()
         }
@@ -304,7 +376,7 @@ final class AppState: ObservableObject {
             : (index > 0 ? rows[index - 1].id : nil)
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.store.delete(id: entry.id)
+            await self.perform("Delete") { try await self.store.delete(id: entry.id) }
             self.selectedID = nextID
             IPC.post(.storeChanged)
             self.reload()
@@ -333,7 +405,7 @@ final class AppState: ObservableObject {
     func setShortcut(_ shortcut: String?, for entry: ClipboardEntry) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.store.setShortcut(shortcut, id: entry.id)
+            await self.perform("Shortcut") { try await self.store.setShortcut(shortcut, id: entry.id) }
             IPC.post(.storeChanged)
             self.reload()
             self.refreshSnippets()
@@ -362,7 +434,7 @@ final class AppState: ObservableObject {
     func addTag(_ tag: String, to entry: ClipboardEntry) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.store.addTag(tag, entryID: entry.id)
+            await self.perform("Add tag") { try await self.store.addTag(tag, entryID: entry.id) }
             IPC.post(.storeChanged)
             self.reload()
             self.refreshTags()
@@ -372,7 +444,7 @@ final class AppState: ObservableObject {
     func removeTag(_ tag: String, from entry: ClipboardEntry) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.store.removeTag(tag, entryID: entry.id)
+            await self.perform("Remove tag") { try await self.store.removeTag(tag, entryID: entry.id) }
             IPC.post(.storeChanged)
             self.reload()
             self.refreshTags()
@@ -382,112 +454,10 @@ final class AppState: ObservableObject {
     func setTags(_ tags: [String], for entry: ClipboardEntry) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            try? await self.store.setTags(tags, entryID: entry.id)
+            await self.perform("Save tags") { try await self.store.setTags(tags, entryID: entry.id) }
             IPC.post(.storeChanged)
             self.reload()
             self.refreshTags()
         }
-    }
-
-    // MARK: - Copy to pasteboard
-
-    /// Writes the entry to NSPasteboard.general. The monitor is told about
-    /// the expected self-inflicted change first so it only bumps recency
-    /// instead of re-capturing.
-    func copy(_ entry: ClipboardEntry) {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            switch entry.type {
-            case .text:
-                await self.monitor.expectSelfChange(entryID: entry.id)
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(entry.content ?? "", forType: .string)
-                await self.monitor.confirmSelfChange(changeCount: pasteboard.changeCount)
-            case .shell:
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(entry.content ?? "", forType: .string)
-                try? await self.store.touch(id: entry.id)
-            case .image:
-                // Load the full image data first: only tell the monitor once
-                // we know the write will actually happen.
-                guard let url = await self.store.imageFileURL(for: entry) else { return }
-                let data = await Task.detached(priority: .userInitiated) {
-                    try? Data(contentsOf: url)
-                }.value
-                guard let data else {
-                    self.logger.error("copy failed: image file missing for entry \(entry.id, privacy: .public)")
-                    return
-                }
-                await self.monitor.expectSelfChange(entryID: entry.id)
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                switch entry.imageFormat?.lowercased() {
-                case "png":
-                    pasteboard.setData(data, forType: .png)
-                case "tiff", "tif":
-                    pasteboard.setData(data, forType: .tiff)
-                case "jpeg", "jpg":
-                    pasteboard.setData(data, forType: NSPasteboard.PasteboardType("public.jpeg"))
-                default:
-                    // Unknown format: convert through NSImage to TIFF.
-                    if let tiff = NSImage(data: data)?.tiffRepresentation {
-                        pasteboard.setData(tiff, forType: .tiff)
-                    } else {
-                        pasteboard.setData(data, forType: .tiff)
-                    }
-                }
-                await self.monitor.confirmSelfChange(changeCount: pasteboard.changeCount)
-            }
-            IPC.post(.storeChanged)
-            self.onCloseRequest?()
-
-            // Maccy-style paste-on-select: the panel never activated clap, so
-            // the app the user came from still has key focus. Small delay so
-            // the panel is gone and the pasteboard write has settled before
-            // the synthetic Cmd+V lands.
-            let pasteEnabled = ((try? await self.store.config("paste.on_copy")) ?? "1") == "1"
-            if pasteEnabled {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                Paster.pasteToFrontmostApp()
-            }
-        }
-    }
-
-    /// Writes transformed text to clipboard, captures it as a new entry,
-    /// closes the panel, and optionally pastes it to the frontmost app.
-    func copyTransformedText(_ text: String) {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
-            _ = try? await self.store.captureText(text, sourceApp: "clap")
-            IPC.post(.storeChanged)
-            self.reload()
-            self.onCloseRequest?()
-
-            let pasteEnabled = ((try? await self.store.config("paste.on_copy")) ?? "1") == "1"
-            if pasteEnabled {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                Paster.pasteToFrontmostApp()
-            }
-        }
-    }
-
-    // MARK: - Thumbnails
-
-    /// Loads (and lazily generates) the thumbnail for an image entry,
-    /// cached in a small NSCache.
-    func thumbnail(for entry: ClipboardEntry) async -> NSImage? {
-        let key = NSNumber(value: entry.id)
-        if let cached = thumbnailCache.object(forKey: key) { return cached }
-        guard let url = try? await store.thumbnailURL(for: entry) else { return nil }
-        let image = await Task.detached(priority: .utility) {
-            NSImage(contentsOf: url)
-        }.value
-        if let image { thumbnailCache.setObject(image, forKey: key) }
-        return image
     }
 }

@@ -2,15 +2,34 @@ import Foundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import os
 @testable import ClapCore
 
+/// Settable clock for deterministic timestamp control via ClipboardStore's
+/// injected `now:`. Thread-safe: read on the store's executor, written from
+/// test tasks.
+final class TestClock: @unchecked Sendable {
+    private let state = OSAllocatedUnfairLock<Date>(initialState: Date())
+
+    var value: Date {
+        get { state.withLock { $0 } }
+        set { state.withLock { $0 = newValue } }
+    }
+
+    func advance(_ seconds: TimeInterval) {
+        value = value.addingTimeInterval(seconds)
+    }
+}
+
 /// Creates a store in a unique temp data dir, runs `body`, cleans up.
-func withStore<T>(_ body: (ClipboardStore, URL) async throws -> T) async throws -> T {
+/// Pass a clock to drive timestamps deterministically.
+func withStore<T>(clock: TestClock = TestClock(),
+                  _ body: (ClipboardStore, URL) async throws -> T) async throws -> T {
     let dir = FileManager.default.temporaryDirectory
         .appendingPathComponent("clap-tests", isDirectory: true)
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: dir) }
-    let store = try ClipboardStore(dataDir: dir)
+    let store = try ClipboardStore(dataDir: dir, now: { clock.value })
     return try await body(store, dir)
 }
 

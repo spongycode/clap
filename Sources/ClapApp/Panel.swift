@@ -1,4 +1,5 @@
 import AppKit
+import ClapCore
 import SwiftUI
 
 /// Borderless nonactivating floating panel hosting the SwiftUI UI.
@@ -19,11 +20,12 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     static let panelSize = NSSize(width: 780, height: 520)
     static let minPanelSize = NSSize(width: 520, height: 360)
-    private static let frameConfigKey = "ui.panel_frame"
+    private static let frameConfigKey = ConfigKey.uiPanelFrame
 
     private let panel: ClapPanel
     private let appState: AppState
     private var keyMonitor: Any?
+    private var mouseMoveMonitor: Any?
     private var previewController: PreviewController?
 
     private var previousApp: NSRunningApplication?
@@ -56,6 +58,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.becomesKeyOnlyIfNeeded = false
         panel.isReleasedWhenClosed = false
         panel.minSize = Self.minPanelSize
+        // Required so the app receives mouseMoved events while inactive;
+        // those moves are what arm hover-selection (see AppState.pointerArmed).
+        panel.acceptsMouseMovedEvents = true
         panel.delegate = self
         panel.contentView = NSHostingView(rootView: ContentView().environmentObject(appState))
 
@@ -74,6 +79,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     deinit {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let mouseMoveMonitor { NSEvent.removeMonitor(mouseMoveMonitor) }
     }
 
     var isVisible: Bool { panel.isVisible }
@@ -107,6 +113,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         suppressFrameSave = false
         panel.makeKeyAndOrderFront(nil)
+        installMouseMoveMonitor()
         // Focus the search field once the panel is actually key.
         Task { @MainActor [appState] in
             appState.searchFocusToken += 1
@@ -115,11 +122,12 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func hide(reactivatePreviousApp: Bool = false) {
         guard panel.isVisible else { return }
+        removeMouseMoveMonitor()
         previewController?.hide()
         panel.orderOut(nil)
         if reactivatePreviousApp {
             if let previousApp, !previousApp.isTerminated {
-                previousApp.activate(options: .activateIgnoringOtherApps)
+                previousApp.activate()
             } else {
                 NSApp.hide(nil)
             }
@@ -161,7 +169,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         // Debounced: windowDidMove fires continuously while dragging.
         frameSaveTask?.cancel()
         frameSaveTask = Task { [appState] in
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: Timing.frameSaveDebounceNanos)
             guard !Task.isCancelled else { return }
             try? await appState.store.setConfig(Self.frameConfigKey,
                                                 value: NSStringFromRect(frame))
@@ -194,6 +202,28 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Arms hover-selection on the first physical pointer movement after the
+    /// panel opens. Without this, a row that happens to sit under the
+    /// stationary cursor would be selected the instant the list appears,
+    /// hijacking blind paste (Enter pastes the selection).
+    private func installMouseMoveMonitor() {
+        guard mouseMoveMonitor == nil else { return }
+        mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDragged, .otherMouseDragged]
+        ) { [weak self] event in
+            guard let self, event.window === self.panel else { return event }
+            self.appState.armPointer()
+            return event
+        }
+    }
+
+    private func removeMouseMoveMonitor() {
+        if let mouseMoveMonitor {
+            NSEvent.removeMonitor(mouseMoveMonitor)
+            self.mouseMoveMonitor = nil
+        }
+    }
+
     /// True while the search field (its field editor) has keyboard focus.
     private var searchFieldIsFirstResponder: Bool {
         panel.firstResponder is NSText
@@ -207,37 +237,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         let chars = event.charactersIgnoringModifiers ?? ""
 
         if modifiers == .command {
-            switch chars {
-            case "f":
-                appState.searchFocusToken += 1
-                return nil
-            case "1":
-                appState.tab = .classic
-                return nil
-            case "2":
-                appState.tab = .media
-                return nil
-            case "3":
-                appState.tab = .shell
-                return nil
-            case "4":
-                appState.tab = .favs
-                return nil
-            case "p":
-                appState.togglePinSelected()
-                return nil
-            case "s", "b":
-                appState.toggleFavoriteSelected()
-                return nil
-            case "r":
-                appState.regexMode.toggle()
-                return nil
-            case "d":
-                appState.deleteSelected()
-                return nil
-            default:
-                return event // e.g. Cmd+A/C/V handled by the Edit menu
-            }
+            if handleCommandKey(chars) { return nil }
+            return event
         }
 
         // Option+Delete removes the selected entry — unless the user is
@@ -269,5 +270,33 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
 
         return event
+    }
+
+    /// Handles ⌘-modified shortcuts. Returns false when unhandled so the
+    /// event passes through (e.g. Cmd+A/C/V for the Edit menu).
+    private func handleCommandKey(_ chars: String) -> Bool {
+        switch chars {
+        case "f":
+            appState.searchFocusToken += 1
+        case "1":
+            appState.selectTab(.classic)
+        case "2":
+            appState.selectTab(.media)
+        case "3":
+            appState.selectTab(.shell)
+        case "4":
+            appState.selectTab(.favs)
+        case "p":
+            appState.togglePinSelected()
+        case "s", "b":
+            appState.toggleFavoriteSelected()
+        case "r":
+            appState.setRegexMode(!appState.regexMode)
+        case "d":
+            appState.deleteSelected()
+        default:
+            return false
+        }
+        return true
     }
 }

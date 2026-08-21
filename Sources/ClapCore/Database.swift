@@ -9,14 +9,16 @@ enum SQLValue {
     case int(Int64)
     case double(Double)
     case text(String)
-    case blob(Data)
     case null
 }
 
 /// A prepared statement. Finalized deterministically (or on deinit as a backstop).
 final class Statement {
     private(set) var handle: OpaquePointer?
-    private unowned let database: Database
+    // Strong on purpose: statements are short-lived locals finalized via
+    // defer/deinit, so this only extends the Database lifetime — an unowned
+    // back-reference here would crash if usage patterns ever change.
+    private let database: Database
 
     init(database: Database, sql: String) throws {
         self.database = database
@@ -50,14 +52,6 @@ final class Statement {
                 rc = sqlite3_bind_double(h, idx, d)
             case .text(let s):
                 rc = sqlite3_bind_text(h, idx, s, -1, sqliteTransient)
-            case .blob(let d):
-                if d.isEmpty {
-                    rc = sqlite3_bind_zeroblob(h, idx, 0)
-                } else {
-                    rc = d.withUnsafeBytes { buf in
-                        sqlite3_bind_blob(h, idx, buf.baseAddress, Int32(d.count), sqliteTransient)
-                    }
-                }
             case .null:
                 rc = sqlite3_bind_null(h, idx)
             }
@@ -107,7 +101,7 @@ final class Database {
             // busy_timeout first: the WAL conversion below takes locks, and
             // two processes opening a fresh DB concurrently (app + CLI) would
             // otherwise hit an unretried SQLITE_BUSY.
-            try exec("PRAGMA busy_timeout=3000")
+            try exec("PRAGMA busy_timeout=\(CoreConstants.busyTimeoutMilliseconds)")
             try exec("PRAGMA journal_mode=WAL")
             try exec("PRAGMA synchronous=NORMAL")
             try exec("PRAGMA foreign_keys=ON")
@@ -240,7 +234,9 @@ final class Database {
     CREATE INDEX IF NOT EXISTS idx_entry_tags_entry ON entry_tags(entry_id);
     """
 
-    /// Idempotent schema creation; sets user_version = 2.
+    /// Idempotent schema creation; sets user_version = 2. schemaSQL is the
+    /// single source of truth (all statements are IF NOT EXISTS); the column
+    /// adds below cover databases created before those columns existed.
     func migrate() throws {
         try transaction {
             let columns = try query("PRAGMA table_info(entries)", [], { row in row.text(1) ?? "" })
@@ -254,17 +250,6 @@ final class Database {
             }
             try exec(Self.schemaSQL)
             try exec("CREATE INDEX IF NOT EXISTS idx_entries_fav ON entries(is_favorite, last_used_at DESC)")
-            try exec("CREATE INDEX IF NOT EXISTS idx_entries_shortcut ON entries(shortcut)")
-            try exec("""
-                CREATE TABLE IF NOT EXISTS entry_tags (
-                    entry_id   INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
-                    tag        TEXT NOT NULL COLLATE NOCASE,
-                    created_at REAL NOT NULL,
-                    PRIMARY KEY (entry_id, tag)
-                )
-                """)
-            try exec("CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag, created_at DESC)")
-            try exec("CREATE INDEX IF NOT EXISTS idx_entry_tags_entry ON entry_tags(entry_id)")
             try exec("PRAGMA user_version = 2")
         }
     }

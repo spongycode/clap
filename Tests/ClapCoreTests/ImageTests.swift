@@ -5,7 +5,7 @@ import Testing
 @Suite("Image capture & thumbnails")
 struct ImageTests {
     @Test func captureImageWritesFileAndRow() async throws {
-        try await withStore { store, dir in
+        try await withStore { store, _ in
             let png = makePNG(width: 12, height: 6)
             let result = try #require(try await store.captureImage(data: png, format: "PNG", sourceApp: "com.test.app"))
             let entry = result.entry
@@ -36,15 +36,16 @@ struct ImageTests {
     }
 
     @Test func duplicateImageTouchesWithoutRewritingFile() async throws {
-        try await withStore { store, _ in
+        let clock = TestClock()
+        try await withStore(clock: clock) { store, _ in
             let png = makePNG()
+            clock.advance(-100)
             let first = try #require(try await store.captureImage(data: png, format: "png", sourceApp: nil))
             let fileURL = try #require(await store.imageFileURL(for: first.entry))
             let originalModDate = try FileManager.default
                 .attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
 
-            try await store._test_setTimestamps(id: first.entry.id,
-                                                lastUsedAt: Date(timeIntervalSinceNow: -100))
+            clock.advance(100)
             let second = try #require(try await store.captureImage(data: png, format: "png", sourceApp: nil))
             #expect(second.wasDuplicate == true)
             #expect(second.entry.id == first.entry.id)
