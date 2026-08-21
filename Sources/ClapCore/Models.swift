@@ -17,10 +17,12 @@ public struct ClipboardEntry: Identifiable, Sendable, Equatable {
     public let useCount: Int
     public let sourceApp: String?
     public let shortcut: String?
+    public let tags: [String]
 
     public init(id: Int64, type: EntryType, content: String?, imagePath: String?, imageFormat: String?,
                 contentHash: String, createdAt: Date, lastUsedAt: Date, sizeBytes: Int64,
-                isPinned: Bool, isFavorite: Bool, useCount: Int, sourceApp: String?, shortcut: String? = nil) {
+                isPinned: Bool, isFavorite: Bool, useCount: Int, sourceApp: String?, shortcut: String? = nil,
+                tags: [String] = []) {
         self.id = id
         self.type = type
         self.content = content
@@ -35,6 +37,7 @@ public struct ClipboardEntry: Identifiable, Sendable, Equatable {
         self.useCount = useCount
         self.sourceApp = sourceApp
         self.shortcut = shortcut
+        self.tags = tags
     }
 }
 
@@ -47,18 +50,21 @@ public struct SearchQuery: Sendable {
     public var types: Set<EntryType>?
     public var pinnedOnly: Bool
     public var favoriteOnly: Bool
+    public var tag: String?            // filter by specific tag
     public var limit: Int
     public var offset: Int
 
     public init(text: String? = nil, regex: String? = nil, type: EntryType? = nil,
                 types: Set<EntryType>? = nil,
-                pinnedOnly: Bool = false, favoriteOnly: Bool = false, limit: Int = 100, offset: Int = 0) {
+                pinnedOnly: Bool = false, favoriteOnly: Bool = false, tag: String? = nil,
+                limit: Int = 100, offset: Int = 0) {
         self.text = text
         self.regex = regex
         self.type = type
         self.types = types
         self.pinnedOnly = pinnedOnly
         self.favoriteOnly = favoriteOnly
+        self.tag = tag
         self.limit = limit
         self.offset = offset
     }
@@ -70,12 +76,13 @@ public struct SearchQuery: Sendable {
     }
 
     /// Parses UI/CLI query syntax: bare terms, "quoted phrase",
-    /// `regex:<pat>`, `type:text|image`. Unknown filters ignored.
+    /// `regex:<pat>`, `type:text|image`, `tag:<name>`. Unknown filters ignored.
     /// If both regex and text are present, regex wins and text is ignored.
     public static func parse(_ raw: String, limit: Int, offset: Int) -> SearchQuery {
         let tokens = QueryTokenizer.tokenize(raw)
         var type: EntryType?
         var regex: String?
+        var tag: String?
         var textTokens: [QueryTokenizer.Token] = []
 
         for token in tokens {
@@ -86,6 +93,11 @@ public struct SearchQuery: Sendable {
                 case "shell": type = .shell
                 default: break // unknown filter value ignored
                 }
+                continue
+            }
+            if !token.quoted, token.value.lowercased().hasPrefix("tag:") {
+                let tagVal = String(token.value.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+                if !tagVal.isEmpty { tag = tagVal }
                 continue
             }
             if !token.quoted, token.value.lowercased().hasPrefix("regex:") {
@@ -112,7 +124,7 @@ public struct SearchQuery: Sendable {
                 .joined(separator: " ")
         }
         return SearchQuery(text: text, regex: regex, type: type,
-                           pinnedOnly: false, limit: limit, offset: offset)
+                           pinnedOnly: false, tag: tag, limit: limit, offset: offset)
     }
 }
 

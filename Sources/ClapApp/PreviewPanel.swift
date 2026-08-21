@@ -641,6 +641,17 @@ struct PreviewView: View {
                     }
 
                     Button {
+                        state.promptManageTags(entry)
+                    } label: {
+                        Label(entry.tags.isEmpty ? "Tags" : "\(entry.tags.count) Tags",
+                              systemImage: entry.tags.isEmpty ? "tag" : "tag.fill")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Manage tags and custom pinboards for this entry")
+
+                    Button {
                         copyID()
                     } label: {
                         Label(idCopied ? "Copied" : "Copy ID",
@@ -679,6 +690,26 @@ struct PreviewView: View {
                     Text(Self.appDisplayName(bundleID: app))
                         .font(.system(size: 12))
                         .help(app)
+                }
+            }
+            if !entry.tags.isEmpty {
+                GridRow(alignment: .top) {
+                    metaLabel("Tags")
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 4) {
+                            ForEach(entry.tags, id: \.self) { tag in
+                                Text("#\(tag)")
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(.blue)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.blue.opacity(0.12))
+                                    )
+                            }
+                        }
+                    }
                 }
             }
             if entry.isPinned {

@@ -65,6 +65,9 @@ struct ContentView: View {
                     state.onOpenSettings?()
                 }
             }
+            if state.tab == .favs {
+                tagFilterBar
+            }
             if let error = state.searchError {
                 Text(error)
                     .font(.caption)
@@ -74,6 +77,64 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+    }
+
+    /// Horizontal scrolling tag filter pills bar in the Favs / Pinboards tab
+    private var tagFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                // "All" Pill
+                tagPill(
+                    title: "All",
+                    count: state.selectedTag == nil ? (state.entries.count + state.pinned.count) : nil,
+                    isSelected: state.selectedTag == nil
+                ) {
+                    state.selectedTag = nil
+                }
+
+                // Tag Pills
+                ForEach(state.availableTags, id: \.tag) { item in
+                    tagPill(
+                        title: "#\(item.tag)",
+                        count: item.count,
+                        isSelected: state.selectedTag?.lowercased() == item.tag.lowercased()
+                    ) {
+                        state.selectedTag = item.tag
+                    }
+                }
+            }
+            .padding(.horizontal, 2)
+            .padding(.top, 4)
+            .padding(.bottom, 2)
+        }
+    }
+
+    private func tagPill(title: String, count: Int?, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 11.5, weight: isSelected ? .bold : .medium, design: title.hasPrefix("#") ? .monospaced : .default))
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: isSelected ? .bold : .regular))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule()
+                                .fill(isSelected ? Color.white.opacity(0.2) : Color.primary.opacity(0.06))
+                        )
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .background(
+                Capsule()
+                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.06))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     /// Settings gear button with circular hover highlight

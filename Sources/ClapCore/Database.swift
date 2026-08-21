@@ -230,9 +230,17 @@ final class Database {
         key   TEXT PRIMARY KEY,
         value INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS entry_tags (
+        entry_id   INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+        tag        TEXT NOT NULL COLLATE NOCASE,
+        created_at REAL NOT NULL,
+        PRIMARY KEY (entry_id, tag)
+    );
+    CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_entry_tags_entry ON entry_tags(entry_id);
     """
 
-    /// Idempotent schema creation; sets user_version = 1.
+    /// Idempotent schema creation; sets user_version = 2.
     func migrate() throws {
         try transaction {
             let columns = try query("PRAGMA table_info(entries)", [], { row in row.text(1) ?? "" })
@@ -247,7 +255,17 @@ final class Database {
             try exec(Self.schemaSQL)
             try exec("CREATE INDEX IF NOT EXISTS idx_entries_fav ON entries(is_favorite, last_used_at DESC)")
             try exec("CREATE INDEX IF NOT EXISTS idx_entries_shortcut ON entries(shortcut)")
-            try exec("PRAGMA user_version = 1")
+            try exec("""
+                CREATE TABLE IF NOT EXISTS entry_tags (
+                    entry_id   INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+                    tag        TEXT NOT NULL COLLATE NOCASE,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (entry_id, tag)
+                )
+                """)
+            try exec("CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag, created_at DESC)")
+            try exec("CREATE INDEX IF NOT EXISTS idx_entry_tags_entry ON entry_tags(entry_id)")
+            try exec("PRAGMA user_version = 2")
         }
     }
 }

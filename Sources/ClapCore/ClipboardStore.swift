@@ -460,6 +460,77 @@ public actor ClipboardStore {
         return map
     }
 
+    // MARK: - Tags / Pinboards
+
+    /// Adds a tag to an entry (e.g. "code", "work"). Strips leading '#' and whitespace.
+    @discardableResult
+    public func addTag(_ rawTag: String, entryID: Int64) throws -> Bool {
+        let tag = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+                        .lowercased()
+        guard !tag.isEmpty else { return false }
+        let now = Date().timeIntervalSince1970
+        try db.run("""
+            INSERT OR IGNORE INTO entry_tags (entry_id, tag, created_at)
+            VALUES (?, ?, ?)
+            """, [.int(entryID), .text(tag), .double(now)])
+        return db.changes > 0
+    }
+
+    /// Removes a tag from an entry.
+    @discardableResult
+    public func removeTag(_ rawTag: String, entryID: Int64) throws -> Bool {
+        let tag = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+                        .lowercased()
+        guard !tag.isEmpty else { return false }
+        try db.run("DELETE FROM entry_tags WHERE entry_id = ? AND tag = ? COLLATE NOCASE",
+                   [.int(entryID), .text(tag)])
+        return db.changes > 0
+    }
+
+    /// Sets the full list of tags for an entry, replacing any previous tags.
+    public func setTags(_ tags: [String], entryID: Int64) throws {
+        let cleaned = tags.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+              .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+              .lowercased()
+        }.filter { !$0.isEmpty }
+        var seen = Set<String>()
+        var unique: [String] = []
+        for t in cleaned {
+            if !seen.contains(t) {
+                seen.insert(t)
+                unique.append(t)
+            }
+        }
+        let now = Date().timeIntervalSince1970
+        try db.transaction {
+            try db.run("DELETE FROM entry_tags WHERE entry_id = ?", [.int(entryID)])
+            for t in unique {
+                try db.run("INSERT OR IGNORE INTO entry_tags (entry_id, tag, created_at) VALUES (?, ?, ?)",
+                           [.int(entryID), .text(t), .double(now)])
+            }
+        }
+    }
+
+    /// Returns all tags for a specific entry.
+    public func tags(for entryID: Int64) throws -> [String] {
+        try db.query("SELECT tag FROM entry_tags WHERE entry_id = ? ORDER BY tag COLLATE NOCASE ASC",
+                     [.int(entryID)]) { $0.text(0) ?? "" }
+    }
+
+    /// Returns all distinct tags across the store with their respective entry counts.
+    public func allTags() throws -> [(tag: String, count: Int)] {
+        try db.query("""
+            SELECT tag, COUNT(*) as count FROM entry_tags
+            GROUP BY tag COLLATE NOCASE
+            ORDER BY tag COLLATE NOCASE ASC
+            """) { stmt in
+            (tag: stmt.text(0) ?? "", count: Int(stmt.int64(1)))
+        }
+    }
+
     /// Removes every entry (counters are kept) and wipes the contents of
     /// the images/ and thumbnails/ directories. Returns removed row count.
     @discardableResult
@@ -840,10 +911,12 @@ public actor ClipboardStore {
 
     // MARK: - Internal helpers
 
-    static let entryColumns = "id, type, content, image_path, image_format, content_hash, created_at, last_used_at, size_bytes, is_pinned, is_favorite, use_count, source_app, shortcut"
+    static let entryColumns = "id, type, content, image_path, image_format, content_hash, created_at, last_used_at, size_bytes, is_pinned, is_favorite, use_count, source_app, shortcut, (SELECT GROUP_CONCAT(tag, '|||') FROM entry_tags WHERE entry_id = entries.id) AS tags"
 
     static func rowToEntry(_ stmt: Statement) -> ClipboardEntry {
-        ClipboardEntry(
+        let tagStr = stmt.text(14)
+        let tags = tagStr?.components(separatedBy: "|||").filter { !$0.isEmpty } ?? []
+        return ClipboardEntry(
             id: stmt.int64(0),
             type: EntryType(rawValue: stmt.text(1) ?? "") ?? .text,
             content: stmt.text(2),
@@ -857,7 +930,8 @@ public actor ClipboardStore {
             isFavorite: stmt.int64(10) != 0,
             useCount: Int(stmt.int64(11)),
             sourceApp: stmt.text(12),
-            shortcut: stmt.text(13)
+            shortcut: stmt.text(13),
+            tags: tags
         )
     }
 
@@ -950,6 +1024,10 @@ public actor ClipboardStore {
         }
         if query.pinnedOnly { conditions.append("is_pinned = 1") }
         if query.favoriteOnly { conditions.append("is_favorite = 1") }
+        if let tag = query.tag?.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "#")), !tag.isEmpty {
+            conditions.append("id IN (SELECT entry_id FROM entry_tags WHERE tag = ? COLLATE NOCASE)")
+            binds.append(.text(tag))
+        }
         var sql = "SELECT \(Self.entryColumns) FROM entries"
         if !conditions.isEmpty { sql += " WHERE " + conditions.joined(separator: " AND ") }
         sql += " ORDER BY last_used_at DESC, id DESC LIMIT ? OFFSET ?"
@@ -969,10 +1047,12 @@ public actor ClipboardStore {
 
     private func ftsSearch(_ tokens: [QueryTokenizer.Token], query: SearchQuery) throws -> [ClipboardEntry] {
         let match = Self.ftsMatchExpression(tokens)
-        let prefixedColumns = Self.entryColumns
-            .split(separator: ",")
-            .map { "e.\($0.trimmingCharacters(in: .whitespaces))" }
-            .joined(separator: ", ")
+        let prefixedColumns = """
+            e.id, e.type, e.content, e.image_path, e.image_format, e.content_hash,
+            e.created_at, e.last_used_at, e.size_bytes, e.is_pinned, e.is_favorite,
+            e.use_count, e.source_app, e.shortcut,
+            (SELECT GROUP_CONCAT(tag, '|||') FROM entry_tags WHERE entry_id = e.id) AS tags
+            """
         var sql = """
             SELECT \(prefixedColumns) FROM entries e
             JOIN entries_fts ON entries_fts.rowid = e.id
@@ -985,6 +1065,10 @@ public actor ClipboardStore {
         }
         if query.pinnedOnly { sql += " AND e.is_pinned = 1" }
         if query.favoriteOnly { sql += " AND e.is_favorite = 1" }
+        if let tag = query.tag?.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "#")), !tag.isEmpty {
+            sql += " AND e.id IN (SELECT entry_id FROM entry_tags WHERE tag = ? COLLATE NOCASE)"
+            binds.append(.text(tag))
+        }
         sql += " ORDER BY e.last_used_at DESC, e.id DESC LIMIT ? OFFSET ?"
         binds.append(.int(Int64(max(0, query.limit))))
         binds.append(.int(Int64(max(0, query.offset))))
@@ -1001,21 +1085,28 @@ public actor ClipboardStore {
     /// Batched candidate scan over text entries in last_used_at DESC order.
     /// Calls `visit` per row; stops when `visit` returns false, the scan cap
     /// is reached, or the time budget is exhausted (partial results).
-    private func scanTextEntries(pinnedOnly: Bool, favoriteOnly: Bool = false, contentType: EntryType? = nil,
+    private func scanTextEntries(pinnedOnly: Bool, favoriteOnly: Bool = false, tag: String? = nil, contentType: EntryType? = nil,
                                  _ visit: (ClipboardEntry) throws -> Bool) throws {
         var scanned = 0
         var dbOffset = 0
         let deadline = Date().addingTimeInterval(Self.regexScanTimeBudget)
+        let cleanedTag = tag?.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         while scanned < Self.regexScanCap {
             if Date() >= deadline { return }
             // Regex scans every content-bearing type (text + shell).
             var sql = "SELECT \(Self.entryColumns) FROM entries WHERE type IN ('text', 'shell')"
+            var binds: [SQLValue] = []
             if let only = contentType { sql += " AND type = '\(only.rawValue)'" }
             if pinnedOnly { sql += " AND is_pinned = 1" }
             if favoriteOnly { sql += " AND is_favorite = 1" }
+            if let cleanedTag, !cleanedTag.isEmpty {
+                sql += " AND id IN (SELECT entry_id FROM entry_tags WHERE tag = ? COLLATE NOCASE)"
+                binds.append(.text(cleanedTag))
+            }
             sql += " ORDER BY last_used_at DESC, id DESC LIMIT ? OFFSET ?"
-            let batch = try db.query(sql, [.int(Int64(Self.regexScanBatchSize)), .int(Int64(dbOffset))],
-                                     Self.rowToEntry)
+            binds.append(.int(Int64(Self.regexScanBatchSize)))
+            binds.append(.int(Int64(dbOffset)))
+            let batch = try db.query(sql, binds, Self.rowToEntry)
             if batch.isEmpty { return }
             for entry in batch {
                 scanned += 1
@@ -1038,7 +1129,7 @@ public actor ClipboardStore {
         var toSkip = max(0, query.offset)
         let limit = max(0, query.limit)
         guard limit > 0 else { return [] }
-        try scanTextEntries(pinnedOnly: query.pinnedOnly, favoriteOnly: query.favoriteOnly, contentType: single) { entry in
+        try scanTextEntries(pinnedOnly: query.pinnedOnly, favoriteOnly: query.favoriteOnly, tag: query.tag, contentType: single) { entry in
             if let content = entry.content, SafeRegex.matches(regex, in: content) {
                 if toSkip > 0 {
                     toSkip -= 1

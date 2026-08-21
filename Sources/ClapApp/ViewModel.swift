@@ -56,6 +56,16 @@ final class AppState: ObservableObject {
     @Published private(set) var entries: [ClipboardEntry] = []
     @Published var selectedID: Int64?
     @Published private(set) var searchError: String?
+    /// Selected tag in Favorites / Pinboards tab (nil = All)
+    @Published var selectedTag: String? = nil {
+        didSet {
+            guard oldValue != selectedTag else { return }
+            selectedID = nil
+            reload()
+        }
+    }
+    /// Available tags across the store with their entry counts
+    @Published private(set) var availableTags: [(tag: String, count: Int)] = []
     /// Incremented to move keyboard focus into the search field.
     @Published var searchFocusToken = 0
 
@@ -124,7 +134,13 @@ final class AppState: ObservableObject {
         }
         // The tab constrains types unless the query already used `type:`.
         if query.type == nil { query.types = tab.types }
-        if tab == .favs { query.favoriteOnly = true }
+        if tab == .favs {
+            if let selectedTag {
+                query.tag = selectedTag
+            } else {
+                query.favoriteOnly = true
+            }
+        }
         return query
     }
 
@@ -133,6 +149,7 @@ final class AppState: ObservableObject {
         generation += 1
         let gen = generation
         let currentTab = tab
+        let currentTag = selectedTag
         let query = buildQuery(offset: 0)
 
         Task { @MainActor [weak self] in
@@ -151,7 +168,11 @@ final class AppState: ObservableObject {
                     } else if currentTab == .shell {
                         fetched = try await self.store.list(type: .shell, limit: Self.pageSize, offset: 0)
                     } else { // .favs
-                        fetched = try await self.store.search(SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: 0))
+                        if let currentTag {
+                            fetched = try await self.store.search(SearchQuery(tag: currentTag, limit: Self.pageSize, offset: 0))
+                        } else {
+                            fetched = try await self.store.search(SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: 0))
+                        }
                     }
                 }
                 guard gen == self.generation else { return }
@@ -170,6 +191,7 @@ final class AppState: ObservableObject {
                     self.selectedID = self.flatRows.first?.id
                 }
                 self.refreshSnippets()
+                self.refreshTags()
             } catch {
                 guard gen == self.generation else { return }
                 if case ClapCoreError.invalidPattern = error {
@@ -190,6 +212,7 @@ final class AppState: ObservableObject {
         isLoadingMore = true
         let gen = generation
         let currentTab = tab
+        let currentTag = selectedTag
         let offset = fetchedCount
         let query = buildQuery(offset: offset)
 
@@ -207,7 +230,11 @@ final class AppState: ObservableObject {
                 } else if currentTab == .shell {
                     fetched = try await self.store.list(type: .shell, limit: Self.pageSize, offset: offset)
                 } else { // .favs
-                    fetched = try await self.store.search(SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: offset))
+                    if let currentTag {
+                        fetched = try await self.store.search(SearchQuery(tag: currentTag, limit: Self.pageSize, offset: offset))
+                    } else {
+                        fetched = try await self.store.search(SearchQuery(favoriteOnly: true, limit: Self.pageSize, offset: offset))
+                    }
                 }
                 guard gen == self.generation else { return }
                 self.fetchedCount += fetched.count
@@ -318,6 +345,47 @@ final class AppState: ObservableObject {
             guard let self else { return }
             let all = (try? await self.store.allShortcuts()) ?? [:]
             SnippetExpander.shared.updateSnippets(all)
+        }
+    }
+
+    func refreshTags() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.availableTags = (try? await self.store.allTags()) ?? []
+        }
+    }
+
+    func promptManageTags(_ entry: ClipboardEntry) {
+        TagWindowController.shared.show(for: entry, state: self)
+    }
+
+    func addTag(_ tag: String, to entry: ClipboardEntry) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.store.addTag(tag, entryID: entry.id)
+            IPC.post(.storeChanged)
+            self.reload()
+            self.refreshTags()
+        }
+    }
+
+    func removeTag(_ tag: String, from entry: ClipboardEntry) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.store.removeTag(tag, entryID: entry.id)
+            IPC.post(.storeChanged)
+            self.reload()
+            self.refreshTags()
+        }
+    }
+
+    func setTags(_ tags: [String], for entry: ClipboardEntry) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await self.store.setTags(tags, entryID: entry.id)
+            IPC.post(.storeChanged)
+            self.reload()
+            self.refreshTags()
         }
     }
 

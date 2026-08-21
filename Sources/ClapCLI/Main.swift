@@ -8,7 +8,7 @@ import ClapCore
 /// extracted before command dispatch.
 @main
 struct ClapMain {
-    static let version = "0.1.1"
+    static let version = "0.2.0"
 
     static func main() async {
         var args = Array(CommandLine.arguments.dropFirst())
@@ -42,6 +42,10 @@ struct ClapMain {
             await PinCommand.run(args, pinned: true, context: context)
         case "unpin":
             await PinCommand.run(args, pinned: false, context: context)
+        case "tag":
+            await TagCommand.run(args, context: context)
+        case "tags":
+            await TagCommand.run(["list"] + args, context: context)
         case "clear":
             await ClearCommand.run(args, context: context)
         case "stats":
@@ -110,6 +114,8 @@ enum HelpText {
       clap delete <id> | --text <text> | --regex <pat>
       clap out [<id> | <exact text>]                        Alias for clap delete
       clap pin <id> / clap unpin <id>
+      clap tag add <id> <tag> / clap tag remove <id> <tag>
+      clap tags / clap tag list [id]
       clap clear [--force]
       clap stats [--json]
       clap config get [key]

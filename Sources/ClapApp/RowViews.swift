@@ -61,6 +61,21 @@ struct EntryRow: View {
                             )
                     )
             }
+            ForEach(entry.tags.prefix(2), id: \.self) { tag in
+                Text("#\(tag)")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(
+                        Capsule()
+                            .fill(Color.blue.opacity(0.10))
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(Color.blue.opacity(0.20), lineWidth: 0.5)
+                            )
+                    )
+            }
             if entry.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 12.5))
@@ -95,6 +110,9 @@ struct EntryRow: View {
         }
         .contextMenu {
             Button("Copy") { state.copy(entry) }
+            Button(entry.tags.isEmpty ? "Manage Tags…" : "Manage Tags (\(entry.tags.map { "#\($0)" }.joined(separator: ", ")))…") {
+                state.promptManageTags(entry)
+            }
             if (entry.type == .text || entry.type == .shell) {
                 Button(entry.shortcut == nil ? "Set Snippet Shortcut…" : "Edit Snippet Shortcut (\(entry.shortcut!))…") {
                     state.promptSetShortcut(entry)

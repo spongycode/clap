@@ -806,4 +806,66 @@ struct ShellHistoryStoreTests {
             #expect(updated[";zoom"] == nil)
         }
     }
+
+    @Test func tagCRUDAndFiltering() async throws {
+        try await withStore { store, _ in
+            let e1 = try #require(try await store.captureText("SELECT * FROM users WHERE active = 1;", sourceApp: nil)).entry
+            let e2 = try #require(try await store.captureText("SELECT * FROM orders WHERE paid = 1;", sourceApp: nil)).entry
+            let e3 = try #require(try await store.captureText("Hi team, here is the weekly recap.", sourceApp: nil)).entry
+
+            // Add tags
+            _ = try await store.addTag("sql", entryID: e1.id)
+            _ = try await store.addTag("#work", entryID: e1.id)
+            _ = try await store.addTag("sql", entryID: e2.id)
+            _ = try await store.addTag("email", entryID: e3.id)
+            _ = try await store.addTag("work", entryID: e3.id)
+
+            // Verify entry hydration
+            let reloaded1 = try #require(try await store.entry(id: e1.id))
+            #expect(reloaded1.tags.contains("sql"))
+            #expect(reloaded1.tags.contains("work"))
+
+            // Verify allTags
+            let all = try await store.allTags()
+            let tagMap = Dictionary(uniqueKeysWithValues: all.map { ($0.tag, $0.count) })
+            #expect(tagMap["sql"] == 2)
+            #expect(tagMap["work"] == 2)
+            #expect(tagMap["email"] == 1)
+
+            // Filter search by tag
+            let sqlEntries = try await store.search(SearchQuery(tag: "sql"))
+            #expect(sqlEntries.count == 2)
+            #expect(sqlEntries.map(\.id).contains(e1.id))
+            #expect(sqlEntries.map(\.id).contains(e2.id))
+
+            let emailEntries = try await store.search(SearchQuery(tag: "#email"))
+            #expect(emailEntries.count == 1)
+            #expect(emailEntries[0].id == e3.id)
+
+            // Remove a tag
+            _ = try await store.removeTag("work", entryID: e1.id)
+            let tagsAfterRemove = try await store.tags(for: e1.id)
+            #expect(tagsAfterRemove == ["sql"])
+
+            // Set tags batch
+            try await store.setTags(["db", "analytics"], entryID: e2.id)
+            let e2Tags = try await store.tags(for: e2.id)
+            #expect(e2Tags.sorted() == ["analytics", "db"])
+        }
+    }
+
+    @Test func tagCascadeOnDelete() async throws {
+        try await withStore { store, _ in
+            let e = try #require(try await store.captureText("Temporary note with tags", sourceApp: nil)).entry
+            _ = try await store.addTag("temporary", entryID: e.id)
+            _ = try await store.addTag("scratch", entryID: e.id)
+
+            #expect(try await store.tags(for: e.id).count == 2)
+
+            // Delete entry
+            _ = try await store.delete(id: e.id)
+            let all = try await store.allTags()
+            #expect(all.isEmpty)
+        }
+    }
 }
