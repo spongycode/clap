@@ -23,7 +23,7 @@
 - **Keyboard-first & Fast** — `⌘⇧V` opens the panel; single click or `Enter` copies, closes, and pastes directly.
 - **Screenshot OCR & Search** — Apple Vision extracts text from screenshots in the background; search inside images (`⌘F`) or copy text with one click.
 - **Global Snippet Expansion** — Assign trigger abbreviations (e.g. `;email`, `!zoom`, `brb`) to saved snippets to auto-expand them anywhere as you type.
-- **Permanent Favorites & Snippets** — Bookmark canned replies, email signatures, code snippets, and commands (`⌘S` / `⌘4`).
+- **Permanent Favorites & Snippets** — Bookmark canned replies, email signatures, code snippets, and commands (`⌘S` / `⌘3`).
 - **Developer Smart Cards** — Automatic previews and one-click actions for Base64, URL encoding, JWT tokens, and Unix timestamps.
 - **Text Case & Encoding Transforms** — Convert text on the fly (`camelCase`, `snake_case`, Base64, URL encode/decode).
 - **Smart Color Swatch Detection** — Recognizes `#hex`, `rgb()`, `rgba()`, `hsl()` color codes with live inline circle swatches.
@@ -108,7 +108,7 @@ Press **⌘⇧V** to open the panel (configurable in Settings to `⌘⇧B`, `⌘
 | **Single Click** | Copy entry, close panel, and paste directly into active app |
 | **↑ / ↓** | Navigate entries |
 | **Enter** | Copy selected entry, close, and paste into active app |
-| **⌘1 / ⌘2 / ⌘3 / ⌘4** | Switch tabs: **Classic (⌘1)** · **Media (⌘2)** · **Shell (⌘3)** · **Favs (⌘4)** |
+| **⌘1 / ⌘2 / ⌘3 / ⌘4** | Switch tabs: **Classic (⌘1)** · **Shell (⌘2)** · **Favs (⌘3)** · **Media (⌘4)** |
 | **⌘S** or **⌘B** | Toggle Favorite / Bookmark on selected entry (marked with ❤️) |
 | **⌘P** | Pin / unpin selected entry (pinned items stick to top of Classic view) |
 | **⌘F** | Focus search bar |

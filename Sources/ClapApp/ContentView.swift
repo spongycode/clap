@@ -204,14 +204,14 @@ struct ContentView: View {
             TabButton(icon: "doc.on.clipboard", tab: .classic, currentTab: state.tab, shortcut: "⌘1", label: "Classic") {
                 state.selectTab(.classic)
             }
-            TabButton(icon: "photo", tab: .media, currentTab: state.tab, shortcut: "⌘2", label: "Media") {
-                state.selectTab(.media)
-            }
-            TabButton(icon: "terminal", tab: .shell, currentTab: state.tab, shortcut: "⌘3", label: "Shell") {
+            TabButton(icon: "terminal", tab: .shell, currentTab: state.tab, shortcut: "⌘2", label: "Shell") {
                 state.selectTab(.shell)
             }
-            TabButton(icon: "heart.fill", tab: .favs, currentTab: state.tab, shortcut: "⌘4", label: "Favs") {
+            TabButton(icon: "heart.fill", tab: .favs, currentTab: state.tab, shortcut: "⌘3", label: "Favs") {
                 state.selectTab(.favs)
+            }
+            TabButton(icon: "photo", tab: .media, currentTab: state.tab, shortcut: "⌘4", label: "Media") {
+                state.selectTab(.media)
             }
         }
         .padding(2.5)

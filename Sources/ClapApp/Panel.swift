@@ -281,11 +281,11 @@ final class PanelController: NSObject, NSWindowDelegate {
         case "1":
             appState.selectTab(.classic)
         case "2":
-            appState.selectTab(.media)
-        case "3":
             appState.selectTab(.shell)
-        case "4":
+        case "3":
             appState.selectTab(.favs)
+        case "4":
+            appState.selectTab(.media)
         case "p":
             appState.togglePinSelected()
         case "s", "b":

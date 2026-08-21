@@ -293,7 +293,7 @@ pgrep ClapApp), print hint to start the app.
 - UI lists are paged: fetch 100 rows, fetch more as selection/scroll nears the
   end. Media tab = LazyVGrid of thumbnails.
 - Keys: ↑/↓ navigate, Enter copy+close, Esc close, Cmd+F focus search,
-  Cmd+1/Cmd+2 tabs, Cmd+P pin toggle, Cmd+D or Option+Delete delete (the
+  Cmd+1-Cmd+4 tabs, Cmd+P pin toggle, Cmd+D or Option+Delete delete (the
   latter yields to delete-word while editing a non-empty search), hover
   selects a row (pointer-driven selection never auto-scrolls), Cmd+R
   regex-mode toggle
