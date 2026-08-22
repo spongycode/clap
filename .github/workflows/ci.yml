@@ -30,4 +30,4 @@ jobs:
       - name: Lint
         run: |
           brew install swiftlint
-          swiftlint --reporter github-actions
+          swiftlint --reporter github-actions-logging
