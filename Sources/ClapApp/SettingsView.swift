@@ -6,39 +6,30 @@ import ClapCore
 /// Owns the standard titled Settings window (opened from the gear button and
 /// the menu bar item).
 @MainActor
-final class SettingsWindowController: NSObject {
+final class SettingsWindowController: UtilityWindowController {
 
     private let store: ClipboardStore
-    private var window: NSWindow?
+    var healthProvider: (() -> (hotKeyOK: Bool, snippetTapOK: Bool))?
 
     init(store: ClipboardStore) {
         self.store = store
-        super.init()
+        super.init(title: "clap Settings",
+                   contentRect: NSRect(x: 0, y: 0, width: 500, height: 640),
+                   styleMask: [.titled, .closable, .miniaturizable])
     }
 
     func show() {
-        if window == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 500, height: 640),
-                styleMask: [.titled, .closable, .miniaturizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "clap Settings"
-            window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(store: store))
-            window.center()
-            self.window = window
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        show(rootView: SettingsView(store: store, healthProvider: healthProvider))
     }
 }
 
 struct SettingsView: View {
     let store: ClipboardStore
+    /// Supplies live component health when the window opens. Set by the app
+    /// delegate; nil in previews.
+    var healthProvider: (() -> (hotKeyOK: Bool, snippetTapOK: Bool))?
 
-    @State private var loaded = false
+    @State var loaded = false
     @State private var stats: StoreStats?
     @State private var textMaxEntries = 100_000
     @State private var textMaxMB = 50
@@ -51,8 +42,15 @@ struct SettingsView: View {
     @State private var retentionDays = 0
     @State private var hotkey = "cmd+shift+v"
     @State private var launchAtLogin = false
+    /// Serializes settings writes per key: rapid stepper/toggle changes each
+    /// await the previous task for that key, so the store always converges to
+    /// the newest value regardless of actor scheduling order.
+    @State var saveTasks: [String: Task<Void, Never>] = [:]
     @State private var suppressLoginToggle = false
     @State private var launchError: String?
+    @State var saveError: String?
+    @State var hotKeyOK = true
+    @State var snippetTapOK = true
     @State private var paused = false
     @State private var pasteOnCopy = true
     @State private var snippetsEnabled = true
@@ -60,18 +58,30 @@ struct SettingsView: View {
     @State private var newExclusion = ""
 
     var body: some View {
-        formWithLimitHandlers
-            .onChange(of: shellEnabled) { _, value in save("shell.enabled", value ? "1" : "0") }
-            .onChange(of: shellHistfile) { _, value in save("shell.histfile", value.trimmingCharacters(in: .whitespaces)) }
-            .onChange(of: retentionDays) { _, value in save("retention.days", String(value)) }
-            .onChange(of: hotkey) { _, value in save("ui.hotkey", value) }
-            .onChange(of: paused) { _, value in save("monitoring.paused", value ? "1" : "0") }
+        ZStack(alignment: .top) {
+            AdaptivePanelBackground()
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: 0)
+
+                formWithLimitHandlers
+                    .scrollContentBackground(.hidden)
+                    .clipped()
+            }
+        }
+        .onChange(of: shellEnabled) { _, value in save(ConfigKey.shellEnabled, value ? "1" : "0") }
+            .onChange(of: shellHistfile) { _, value in save(ConfigKey.shellHistfile, value.trimmingCharacters(in: .whitespaces)) }
+            .onChange(of: retentionDays) { _, value in save(ConfigKey.retentionDays, String(value)) }
+            .onChange(of: hotkey) { _, value in save(ConfigKey.uiHotkey, value) }
+            .onChange(of: paused) { _, value in save(ConfigKey.monitoringPaused, value ? "1" : "0") }
             .onChange(of: snippetsEnabled) { _, value in
-                save("snippets.enabled", value ? "1" : "0")
+                save(ConfigKey.snippetsEnabled, value ? "1" : "0")
                 SnippetExpander.shared.setEnabled(value)
             }
             .onChange(of: pasteOnCopy) { _, value in
-                save("paste.on_copy", value ? "1" : "0")
+                save(ConfigKey.pasteOnCopy, value ? "1" : "0")
                 if value && !Paster.isTrusted {
                     Paster.promptAccessibility()
                 }
@@ -89,19 +99,21 @@ struct SettingsView: View {
 
     private var formWithLimitHandlers: some View {
         settingsForm
-            .onChange(of: textMaxEntries) { _, value in save("text.max_entries", String(max(1, value))) }
-            .onChange(of: textMaxMB) { _, value in saveMegabytes("text.max_size", megabytes: value) }
-            .onChange(of: imageMaxEntries) { _, value in save("image.max_entries", String(max(1, value))) }
-            .onChange(of: imageMaxMB) { _, value in saveMegabytes("image.max_size", megabytes: value) }
-            .onChange(of: shellMaxEntries) { _, value in save("shell.max_entries", String(max(1, value))) }
-            .onChange(of: shellMaxMB) { _, value in saveMegabytes("shell.max_size", megabytes: value) }
+            .onChange(of: textMaxEntries) { _, value in save(ConfigKey.textMaxEntries, String(max(1, value))) }
+            .onChange(of: textMaxMB) { _, value in saveMegabytes(ConfigKey.textMaxSize, megabytes: value) }
+            .onChange(of: imageMaxEntries) { _, value in save(ConfigKey.imageMaxEntries, String(max(1, value))) }
+            .onChange(of: imageMaxMB) { _, value in saveMegabytes(ConfigKey.imageMaxSize, megabytes: value) }
+            .onChange(of: shellMaxEntries) { _, value in save(ConfigKey.shellMaxEntries, String(max(1, value))) }
+            .onChange(of: shellMaxMB) { _, value in saveMegabytes(ConfigKey.shellMaxSize, megabytes: value) }
     }
 
     private var settingsForm: some View {
         Form {
             Section {
                 HStack(spacing: 14) {
-                    if let appIcon = NSImage(contentsOfFile: Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/AppIcon.png").path) ?? NSApp.applicationIconImage {
+                    let iconPath = Bundle.main.bundleURL
+                        .appendingPathComponent("Contents/Resources/AppIcon.png").path
+                    if let appIcon = NSImage(contentsOfFile: iconPath) ?? NSApp.applicationIconImage {
                         Image(nsImage: appIcon)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -110,12 +122,22 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Clap")
                             .font(.title2.weight(.bold))
-                        Text("Local-first clipboard & shell history manager · v0.1.1")
-                            .font(.caption)
+                        Text("Local-first clipboard & shell history manager · v0.2.0")
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.vertical, 4)
+            }
+
+            healthSection
+
+            if let saveError {
+                Section {
+                    Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
             }
 
             Section("Text limits") {
@@ -307,21 +329,21 @@ struct SettingsView: View {
 
     private func load() async {
         guard !loaded else { return }
-        textMaxEntries = await configInt("text.max_entries", fallback: 100_000)
-        textMaxMB = await configBytesAsMB("text.max_size", fallback: 50)
-        imageMaxEntries = await configInt("image.max_entries", fallback: 500)
-        imageMaxMB = await configBytesAsMB("image.max_size", fallback: 100)
-        shellEnabled = await configString("shell.enabled") != "0"
-        shellMaxEntries = await configInt("shell.max_entries", fallback: 50_000)
-        shellMaxMB = await configBytesAsMB("shell.max_size", fallback: 10)
-        shellHistfile = (await configString("shell.histfile")) ?? ""
-        retentionDays = await configInt("retention.days", fallback: 0)
-        hotkey = (await configString("ui.hotkey")) ?? "cmd+shift+v"
-        paused = await configString("monitoring.paused") == "1"
-        snippetsEnabled = await configString("snippets.enabled") != "0"
-        pasteOnCopy = await configString("paste.on_copy") != "0"
-        launchAtLogin = await configString("launch_at_login") == "1"
-        if let raw = await configString("exclusions"),
+        textMaxEntries = await configInt(ConfigKey.textMaxEntries, fallback: 100_000)
+        textMaxMB = await configBytesAsMB(ConfigKey.textMaxSize, fallback: 50)
+        imageMaxEntries = await configInt(ConfigKey.imageMaxEntries, fallback: 500)
+        imageMaxMB = await configBytesAsMB(ConfigKey.imageMaxSize, fallback: 100)
+        shellEnabled = await configString(ConfigKey.shellEnabled) != "0"
+        shellMaxEntries = await configInt(ConfigKey.shellMaxEntries, fallback: 50_000)
+        shellMaxMB = await configBytesAsMB(ConfigKey.shellMaxSize, fallback: 10)
+        shellHistfile = (await configString(ConfigKey.shellHistfile)) ?? ""
+        retentionDays = await configInt(ConfigKey.retentionDays, fallback: 0)
+        hotkey = (await configString(ConfigKey.uiHotkey)) ?? HotKeyDefinition.defaultID
+        paused = await configString(ConfigKey.monitoringPaused) == "1"
+        snippetsEnabled = await configString(ConfigKey.snippetsEnabled) != "0"
+        pasteOnCopy = await configString(ConfigKey.pasteOnCopy) != "0"
+        launchAtLogin = await configString(ConfigKey.launchAtLogin) == "1"
+        if let raw = await configString(ConfigKey.exclusions),
            let data = raw.data(using: .utf8),
            let array = try? JSONDecoder().decode([String].self, from: data) {
             exclusions = array
@@ -350,24 +372,6 @@ struct SettingsView: View {
         return fallback
     }
 
-    private func save(_ key: String, _ value: String) {
-        guard loaded else { return }
-        Task {
-            try? await store.setConfig(key, value: value)
-            IPC.post(.configChanged)
-        }
-    }
-
-    private func saveMegabytes(_ key: String, megabytes: Int) {
-        guard loaded else { return }
-        let clamped = max(1, megabytes)
-        let bytes = ByteSize.parse("\(clamped)MB") ?? Int64(clamped) * 1_048_576
-        Task {
-            try? await store.setConfig(key, value: String(bytes))
-            IPC.post(.configChanged)
-        }
-    }
-
     // MARK: - Launch at login
 
     private func updateLaunchAtLogin(_ enabled: Bool) {
@@ -379,7 +383,7 @@ struct SettingsView: View {
                 try SMAppService.mainApp.unregister()
             }
             launchError = nil
-            save("launch_at_login", enabled ? "1" : "0")
+            save(ConfigKey.launchAtLogin, enabled ? "1" : "0")
         } catch {
             // Typical in dev/unbundled builds where SMAppService is unavailable.
             launchError = "Launch at login is unavailable: \(error.localizedDescription)"
@@ -424,7 +428,7 @@ struct SettingsView: View {
     private func saveExclusions() {
         guard let data = try? JSONEncoder().encode(exclusions),
               let json = String(data: data, encoding: .utf8) else { return }
-        save("exclusions", json)
+        save(ConfigKey.exclusions, json)
     }
 }
 
@@ -432,12 +436,12 @@ struct SettingsView: View {
 
 private struct NumericInputRow: View {
     let title: String
-    var pill: String? = nil
-    var pillRatio: Double? = nil
+    var pill: String?
+    var pillRatio: Double?
     @Binding var value: Int
     let range: ClosedRange<Int>
     let step: Int
-    var suffix: String? = nil
+    var suffix: String?
 
     @State private var text: String = ""
 

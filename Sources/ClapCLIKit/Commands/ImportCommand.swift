@@ -139,47 +139,21 @@ enum ImportCommand {
         var imageBytes: Int64 = 0
 
         if dryRun {
-            for item in items {
-                switch item.payload {
-                case .text: textCount += 1
-                case .image(let data, _): imageCount += 1; imageBytes += Int64(data.count)
-                case .none: skipped += 1
-                }
-            }
+            let counts = Self.countDryRun(items)
             print("Dry run — nothing written.")
-            printSummary(textCount: textCount, imageCount: imageCount, merged: 0,
-                         skipped: skipped, imageBytes: imageBytes)
+            printSummary(textCount: counts.text, imageCount: counts.image, merged: 0,
+                         skipped: counts.skipped, imageBytes: counts.imageBytes)
             return
         }
 
         await CLI.run {
             let store = try context.makeStore()
-            for item in items {
-                switch item.payload {
-                case .text(let text):
-                    if let result = try await store.importText(
-                        text, createdAt: item.createdAt, lastUsedAt: item.lastUsedAt,
-                        useCount: item.useCount, pinned: item.pinned, sourceApp: item.sourceApp) {
-                        textCount += 1
-                        if result.merged { merged += 1 }
-                    } else {
-                        skipped += 1
-                    }
-                case .image(let data, let format):
-                    if let result = try await store.importImage(
-                        data: data, format: format, createdAt: item.createdAt,
-                        lastUsedAt: item.lastUsedAt, useCount: item.useCount,
-                        pinned: item.pinned, sourceApp: item.sourceApp) {
-                        imageCount += 1
-                        imageBytes += Int64(data.count)
-                        if result.merged { merged += 1 }
-                    } else {
-                        skipped += 1
-                    }
-                case .none:
-                    skipped += 1
-                }
-            }
+            let counts = try await Self.importItems(items, store: store)
+            textCount = counts.text
+            imageCount = counts.image
+            merged = counts.merged
+            skipped = counts.skipped
+            imageBytes = counts.imageBytes
 
             Notify.storeChanged()
             printSummary(textCount: textCount, imageCount: imageCount, merged: merged,
@@ -190,12 +164,14 @@ enum ImportCommand {
             let stats = try await store.stats()
             if let maxRaw = try await store.config("image.max_size"),
                let maxSize = Int64(maxRaw), stats.imageBytes > maxSize {
+                let suggested = ByteSize.format(((stats.imageBytes / (256 * 1024 * 1024)) + 1) * 256 * 1024 * 1024)
+                    .replacingOccurrences(of: " ", with: "")
                 print("""
 
                 Note: image storage (\(ByteSize.format(stats.imageBytes))) now exceeds the \
                 \(ByteSize.format(maxSize)) limit; the oldest unpinned images will be \
                 evicted on the next maintenance pass. To keep everything, raise the limit:
-                  clap config set image.max_size \(ByteSize.format(((stats.imageBytes / (256 * 1024 * 1024)) + 1) * 256 * 1024 * 1024).replacingOccurrences(of: " ", with: ""))
+                  clap config set image.max_size \(suggested)
                 """)
             }
         }
@@ -224,7 +200,7 @@ enum ImportCommand {
         let candidates = [
             home.appendingPathComponent(
                 "Library/Containers/org.p0deje.Maccy/Data/Library/Application Support/Maccy/Storage.sqlite"),
-            home.appendingPathComponent("Library/Application Support/Maccy/Storage.sqlite"),
+            home.appendingPathComponent("Library/Application Support/Maccy/Storage.sqlite")
         ]
         return candidates.first { fm.fileExists(atPath: $0.path) }
     }
@@ -266,10 +242,10 @@ enum ImportCommand {
     // Preference order per item.
     private static let textTypes = [
         "public.utf8-plain-text", "public.text",
-        "public.utf16-external-plain-text", "public.utf16-plain-text",
+        "public.utf16-external-plain-text", "public.utf16-plain-text"
     ]
     private static let imageTypes: [(uti: String, format: String)] = [
-        ("public.png", "png"), ("public.jpeg", "jpeg"), ("public.tiff", "tiff"),
+        ("public.png", "png"), ("public.jpeg", "jpeg"), ("public.tiff", "tiff")
     ]
 
     static func readMaccyItems(dbPath: String) throws -> [MaccyItem] {
@@ -356,5 +332,64 @@ enum ImportCommand {
             }
         }
         return .none
+    }
+}
+
+private struct MaccyImportCounts {
+    var text = 0
+    var image = 0
+    var merged = 0
+    var skipped = 0
+    var imageBytes: Int64 = 0
+}
+
+extension ImportCommand {
+    /// Counts what a dry-run import would do without touching the store.
+    private static func countDryRun(_ items: [MaccyItem]) -> MaccyImportCounts {
+        var counts = MaccyImportCounts()
+        for item in items {
+            switch item.payload {
+            case .text: counts.text += 1
+            case .image(let data, _):
+                counts.image += 1
+                counts.imageBytes += Int64(data.count)
+            case .none: counts.skipped += 1
+            }
+        }
+        return counts
+    }
+
+    /// Imports every item, merging duplicates, accumulating per-kind counts.
+    private static func importItems(
+        _ items: [MaccyItem], store: ClipboardStore
+    ) async throws -> MaccyImportCounts {
+        var counts = MaccyImportCounts()
+        for item in items {
+            switch item.payload {
+            case .text(let text):
+                if let result = try await store.importText(
+                    text, createdAt: item.createdAt, lastUsedAt: item.lastUsedAt,
+                    useCount: item.useCount, pinned: item.pinned, sourceApp: item.sourceApp) {
+                    counts.text += 1
+                    if result.merged { counts.merged += 1 }
+                } else {
+                    counts.skipped += 1
+                }
+            case .image(let data, let format):
+                if let result = try await store.importImage(
+                    data: data, format: format, createdAt: item.createdAt,
+                    lastUsedAt: item.lastUsedAt, useCount: item.useCount,
+                    pinned: item.pinned, sourceApp: item.sourceApp) {
+                    counts.image += 1
+                    counts.imageBytes += Int64(data.count)
+                    if result.merged { counts.merged += 1 }
+                } else {
+                    counts.skipped += 1
+                }
+            case .none:
+                counts.skipped += 1
+            }
+        }
+        return counts
     }
 }

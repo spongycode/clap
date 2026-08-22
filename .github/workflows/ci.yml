@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+
+jobs:
+  test:
+    name: Build, Test & Lint (macOS)
+    # macOS 26 SDK is required to compile NSGlassEffectView (Liquid Glass).
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest
+
+      - name: Verify toolchain
+        run: swift --version
+
+      - name: Build (warnings are errors)
+        run: swift build -Xswiftc -warnings-as-errors
+
+      - name: Test
+        run: swift test
+
+      - name: Lint
+        run: |
+          brew install swiftlint
+          swiftlint --reporter github-actions-logging

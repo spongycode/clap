@@ -117,35 +117,38 @@ struct ArgParser {
         return v
     }
 
+    /// Validates a single numeric entry id (> 0) without exiting.
+    /// Returns nil for anything invalid.
+    static func validatedID(_ raw: String?) -> Int64? {
+        guard let raw, let id = Int64(raw), id > 0 else { return nil }
+        return id
+    }
+
     /// Requires a single positional numeric id.
     func requiredID(commandName: String) -> Int64 {
-        guard positionals.count == 1, let id = Int64(positionals[0]), id > 0 else {
+        guard positionals.count == 1, let id = Self.validatedID(positionals.first) else {
             CLI.usageError("\(commandName) requires a numeric entry id", usage: usage)
         }
         return id
     }
 }
 
-/// Distributed notifications (IPC with ClapApp). Names are the binding
-/// contract in ARCHITECTURE.md.
+/// Distributed notifications (IPC with ClapApp). Names come from ClapCore's
+/// IPCNotifications so both targets share one source of truth.
 enum Notify {
-    static let openUIName = "com.spongycode.clap.openUI"
-    static let storeChangedName = "com.spongycode.clap.storeChanged"
-    static let configChangedName = "com.spongycode.clap.configChanged"
-
     private static func post(_ name: String) {
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name(name), object: nil, userInfo: nil, deliverImmediately: true)
     }
 
-    static func openUI() { post(openUIName) }
-    static func storeChanged() { post(storeChangedName) }
-    static func configChanged() { post(configChangedName) }
+    static func openUI() { post(IPCNotifications.openUI) }
+    static func storeChanged() { post(IPCNotifications.storeChanged) }
+    static func configChanged() { post(IPCNotifications.configChanged) }
 }
 
 /// Detection of the background app process.
 enum AppProcess {
-    static let bundleID = "com.spongycode.clap"
+    static let bundleID = ClapIdentity.bundleID
 
     static func isRunning() -> Bool {
         if runningViaWorkspace() { return true }

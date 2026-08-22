@@ -72,6 +72,8 @@ struct HotKeyDefinition: Equatable, Identifiable, Sendable {
     static func find(_ id: String) -> HotKeyDefinition {
         presets.first(where: { $0.id == id }) ?? presets[0]
     }
+
+    static let defaultID = presets[0].id
 }
 
 /// Global hotkey manager via Carbon RegisterEventHotKey.
@@ -80,19 +82,25 @@ final class HotKeyManager {
     /// Invoked on the main actor when the hotkey fires.
     var onHotKey: (@MainActor () -> Void)?
 
-    private var currentDefinition: HotKeyDefinition = HotKeyDefinition.presets[0]
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
+    private(set) var lastStatus: OSStatus = noErr
+
+    /// True when the handler is installed AND a hotkey ref is registered.
+    var isRegistered: Bool { hotKeyRef != nil && lastStatus == noErr }
+
+    var statusDescription: String {
+        "OSStatus \(lastStatus)"
+    }
 
     static let signature: OSType = 0x434C_4150 // 'CLAP'
 
     func register(definition: HotKeyDefinition = HotKeyDefinition.presets[0]) {
         unregister()
-        currentDefinition = definition
         installHandlerIfNeeded()
 
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: 1)
-        RegisterEventHotKey(
+        lastStatus = RegisterEventHotKey(
             definition.keyCode,
             definition.modifiers,
             hotKeyID,
@@ -109,8 +117,10 @@ final class HotKeyManager {
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        _ = InstallEventHandler(
+        // Retained for the lifetime of the handler; released in deinit right
+        // before RemoveEventHandler so the callback can never dangle.
+        let selfPtr = Unmanaged.passRetained(self).toOpaque()
+        let installStatus = InstallEventHandler(
             GetEventDispatcherTarget(),
             { _, event, userData -> OSStatus in
                 guard let userData, let event else { return OSStatus(eventNotHandledErr) }
@@ -136,6 +146,10 @@ final class HotKeyManager {
             selfPtr,
             &handlerRef
         )
+        if installStatus != noErr {
+            lastStatus = installStatus
+            Unmanaged.passUnretained(self).release()
+        }
     }
 
     private func fire() {
@@ -155,6 +169,7 @@ final class HotKeyManager {
         unregister()
         if let handlerRef {
             RemoveEventHandler(handlerRef)
+            Unmanaged.passUnretained(self).release()
             self.handlerRef = nil
         }
     }

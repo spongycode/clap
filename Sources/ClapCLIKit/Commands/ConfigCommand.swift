@@ -21,15 +21,24 @@ enum ConfigCommand {
       launch_at_login     true/false or 1/0 (default false)
       paste.on_copy       true/false or 1/0 (default true) — paste into the
                           active app when selecting an entry in the UI
+
+    App-managed keys (readable and settable; written by ClapApp):
+      ui.hotkey           hotkey preset id, e.g. cmd+shift+v
+      ui.panel_frame      persisted panel frame
+      snippets.enabled    true/false or 1/0 (default true)
+      shell.initial_imported  true/false or 1/0 — one-time backfill marker
     """
 
     static let knownKeys: Set<String> = [
-        "text.max_entries", "text.max_size",
-        "image.max_entries", "image.max_size",
-        "shell.enabled", "shell.max_entries", "shell.max_size", "shell.histfile",
-        "monitoring.paused", "exclusions",
-        "retention.days", "launch_at_login",
-        "paste.on_copy",
+        ConfigKey.textMaxEntries, ConfigKey.textMaxSize,
+        ConfigKey.imageMaxEntries, ConfigKey.imageMaxSize,
+        ConfigKey.shellEnabled, ConfigKey.shellMaxEntries, ConfigKey.shellMaxSize,
+        ConfigKey.shellHistfile,
+        ConfigKey.monitoringPaused, ConfigKey.exclusions,
+        ConfigKey.retentionDays, ConfigKey.launchAtLogin,
+        ConfigKey.pasteOnCopy,
+        ConfigKey.uiHotkey, ConfigKey.uiPanelFrame,
+        ConfigKey.snippetsEnabled, ConfigKey.shellInitialImported
     ]
 
     static func run(_ args: [String], context: CLIContext) async {
@@ -102,31 +111,32 @@ enum ConfigCommand {
     /// on anything invalid.
     private static func validatedValue(key: String, rawValue: String) -> String {
         switch key {
-        case "text.max_entries", "image.max_entries", "shell.max_entries":
+        case ConfigKey.textMaxEntries, ConfigKey.imageMaxEntries, ConfigKey.shellMaxEntries:
             guard let n = Int(rawValue), n > 0 else {
                 CLI.usageError("\(key) must be a positive integer", usage: usage)
             }
             return String(n)
-        case "text.max_size", "image.max_size", "shell.max_size":
+        case ConfigKey.textMaxSize, ConfigKey.imageMaxSize, ConfigKey.shellMaxSize:
             guard let bytes = ByteSize.parse(rawValue), bytes > 0 else {
                 CLI.usageError("\(key) must be a size like 52428800, 50MB or 1.5GB", usage: usage)
             }
             return String(bytes)
-        case "monitoring.paused", "launch_at_login", "paste.on_copy", "shell.enabled":
+        case ConfigKey.monitoringPaused, ConfigKey.launchAtLogin, ConfigKey.pasteOnCopy,
+             ConfigKey.shellEnabled, ConfigKey.snippetsEnabled, ConfigKey.shellInitialImported:
             switch rawValue.lowercased() {
             case "true", "1": return "1"
             case "false", "0": return "0"
             default:
                 CLI.usageError("\(key) must be true/false or 1/0", usage: usage)
             }
-        case "shell.histfile":
+        case ConfigKey.shellHistfile:
             return rawValue.trimmingCharacters(in: .whitespaces)
-        case "retention.days":
+        case ConfigKey.retentionDays:
             guard let n = Int(rawValue), n >= 0 else {
                 CLI.usageError("retention.days must be a non-negative integer", usage: usage)
             }
             return String(n)
-        case "exclusions":
+        case ConfigKey.exclusions:
             guard let data = rawValue.data(using: .utf8),
                   let parsed = try? JSONDecoder().decode([String].self, from: data) else {
                 CLI.usageError("exclusions must be a JSON array of strings, e.g. [\"com.example.app\"]",
@@ -136,7 +146,9 @@ enum ConfigCommand {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             let encoded = (try? encoder.encode(parsed)) ?? Data("[]".utf8)
-            return String(decoding: encoded, as: UTF8.self)
+            return String(data: encoded, encoding: .utf8) ?? "[]"
+        case ConfigKey.uiHotkey, ConfigKey.uiPanelFrame:
+            return rawValue
         default:
             CLI.usageError("unknown config key '\(key)'", usage: usage)
         }

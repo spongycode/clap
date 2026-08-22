@@ -21,6 +21,10 @@ public final class SnippetExpander: @unchecked Sendable {
     private var isEnabled = true
     private var retryTimer: Timer?
 
+    /// True when the HID tap is installed (or AX permission is still being
+    /// retried). False means expansion cannot work this session.
+    public var isHealthy: Bool { eventTap != nil || retryTimer != nil }
+
     private init() {}
 
     /// Updates the active shortcuts mapping.
@@ -59,7 +63,7 @@ public final class SnippetExpander: @unchecked Sendable {
         }
 
         let mask = (1 << CGEventType.keyDown.rawValue)
-        let callback: CGEventTapCallBack = { proxy, type, event, refcon in
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
             let expander = Unmanaged<SnippetExpander>.fromOpaque(refcon).takeUnretainedValue()
 
@@ -74,7 +78,9 @@ public final class SnippetExpander: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
 
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        // Retained for the tap's lifetime (released in stop()) so the
+        // callback's refcon can never dangle.
+        let selfPtr = Unmanaged.passRetained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(
             tap: .cghidEventTap,
             place: .headInsertEventTap,
@@ -83,6 +89,7 @@ public final class SnippetExpander: @unchecked Sendable {
             callback: callback,
             userInfo: selfPtr
         ) else {
+            Unmanaged.passUnretained(self).release()
             logger.warning("Could not create cghidEventTap for snippet expansion")
             return
         }
@@ -106,6 +113,9 @@ public final class SnippetExpander: @unchecked Sendable {
             }
             eventTap = nil
             runLoopSource = nil
+            // Balances the passRetained in start(); the singleton lives for
+            // the process lifetime, so this runs at teardown.
+            Unmanaged.passUnretained(self).release()
             logger.info("SnippetExpander stopped")
         }
     }

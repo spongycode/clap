@@ -59,7 +59,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let recent = (try? await self.store.list(type: .text, limit: 5, offset: 0)) ?? []
-            let paused = ((try? await self.store.config("monitoring.paused")) ?? "0") == "1"
+            let paused = ((try? await self.store.config(ConfigKey.monitoringPaused)) ?? "0") == "1"
             let hotkeyStr = ((try? await self.store.config("ui.hotkey")) ?? "cmd+shift+v")
             self.currentShortcut = HotKeyDefinition.find(hotkeyStr)
             self.cachedRecent = recent
@@ -127,15 +127,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     /// Single-line preview: control chars stripped, truncated to 40 chars.
     static func preview(_ text: String) -> String {
-        let cleaned = text.prefix(200)
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-            .components(separatedBy: .controlCharacters)
-            .joined()
-        if cleaned.count > 40 {
-            return String(cleaned.prefix(40)) + "…"
-        }
+        let cleaned = TextSummaries.singleLine(String(text.prefix(200)), maxChars: 40)
         return cleaned.isEmpty ? "(whitespace)" : cleaned
     }
 
@@ -149,7 +141,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let newPaused = !cachedPaused
         cachedPaused = newPaused
         Task { @MainActor [store] in
-            try? await store.setConfig("monitoring.paused", value: newPaused ? "1" : "0")
+            try? await store.setConfig(ConfigKey.monitoringPaused, value: newPaused ? "1" : "0")
             IPC.post(.configChanged)
         }
     }

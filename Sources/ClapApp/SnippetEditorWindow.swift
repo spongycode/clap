@@ -4,16 +4,16 @@ import ClapCore
 
 /// Manages the dedicated titled Snippet Abbreviation window.
 @MainActor
-final class SnippetWindowController: NSObject, NSWindowDelegate {
+final class SnippetWindowController: UtilityWindowController {
     static let shared = SnippetWindowController()
 
-    private var window: NSWindow?
-    private var currentEntry: ClipboardEntry?
+    private init() {
+        super.init(title: "Snippet Abbreviation",
+                   contentRect: NSRect(x: 0, y: 0, width: 440, height: 260))
+    }
 
     func show(for entry: ClipboardEntry, state: AppState) {
-        currentEntry = entry
-
-        let view = SnippetEditorView(entry: entry, onSave: { [weak self] shortcut in
+        show(rootView: SnippetEditorView(entry: entry, onSave: { [weak self] shortcut in
             state.setShortcut(shortcut, for: entry)
             self?.close()
         }, onRemove: { [weak self] in
@@ -21,29 +21,7 @@ final class SnippetWindowController: NSObject, NSWindowDelegate {
             self?.close()
         }, onCancel: { [weak self] in
             self?.close()
-        })
-
-        if window == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 440, height: 260),
-                styleMask: [.titled, .closable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "Snippet Abbreviation"
-            window.isReleasedWhenClosed = false
-            window.delegate = self
-            self.window = window
-        }
-
-        window?.contentView = NSHostingView(rootView: view)
-        window?.center()
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
-    }
-
-    func close() {
-        window?.close()
+        }))
     }
 }
 
@@ -94,10 +72,10 @@ struct SnippetEditorView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
                                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(Color.primary.opacity(0.04))
+                                    .fill(Color.primary.opacity(AppAlpha.Fill.subtle))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                                            .strokeBorder(Color.primary.opacity(AppAlpha.Stroke.hairline), lineWidth: 0.5)
                                     )
                             )
                     }
@@ -129,10 +107,9 @@ struct SnippetEditorView: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(width: 440, height: 260)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AdaptivePanelBackground().ignoresSafeArea())
         .onAppear {
             text = entry.shortcut ?? ""
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {

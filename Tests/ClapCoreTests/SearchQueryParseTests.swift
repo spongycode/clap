@@ -73,7 +73,7 @@ struct QueryTokenizerTests {
         #expect(tokens == [
             .init(value: "a", quoted: false),
             .init(value: "b c", quoted: true),
-            .init(value: "d", quoted: false),
+            .init(value: "d", quoted: false)
         ])
     }
 
@@ -81,7 +81,7 @@ struct QueryTokenizerTests {
         let tokens = QueryTokenizer.tokenize("x \"tail end")
         #expect(tokens == [
             .init(value: "x", quoted: false),
-            .init(value: "tail end", quoted: false),
+            .init(value: "tail end", quoted: false)
         ])
     }
 }

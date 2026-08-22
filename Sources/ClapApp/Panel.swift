@@ -1,5 +1,7 @@
 import AppKit
+import ClapCore
 import SwiftUI
+import Combine
 
 /// Borderless nonactivating floating panel hosting the SwiftUI UI.
 final class ClapPanel: NSPanel {
@@ -17,14 +19,15 @@ final class ClapPanel: NSPanel {
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
 
-    static let panelSize = NSSize(width: 780, height: 520)
-    static let minPanelSize = NSSize(width: 520, height: 360)
-    private static let frameConfigKey = "ui.panel_frame"
+    static let panelSize = NSSize(width: 480, height: 520)
+    static let minPanelSize = NSSize(width: 460, height: 280)
+    private static let frameConfigKey = ConfigKey.uiPanelFrame
 
     private let panel: ClapPanel
     private let appState: AppState
     private var keyMonitor: Any?
-    private var previewController: PreviewController?
+    private var mouseMoveMonitor: Any?
+    private var selectionCancellable: AnyCancellable?
 
     private var previousApp: NSRunningApplication?
 
@@ -52,15 +55,38 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
-        panel.animationBehavior = .utilityWindow
+        panel.animationBehavior = .none
         panel.becomesKeyOnlyIfNeeded = false
         panel.isReleasedWhenClosed = false
         panel.minSize = Self.minPanelSize
+        // Required so the app receives mouseMoved events while inactive;
+        // those moves are what arm hover-selection (see AppState.pointerArmed).
+        panel.acceptsMouseMovedEvents = true
         panel.delegate = self
         panel.contentView = NSHostingView(rootView: ContentView().environmentObject(appState))
 
-        previewController = PreviewController(appState: appState, parent: panel)
         installKeyMonitor()
+
+        appState.slideout.window = panel
+
+        selectionCancellable = appState.$selectedID
+            .removeDuplicates()
+            .sink { [weak self] newID in
+                guard let self else { return }
+                let hasEntry = (newID != nil)
+                if hasEntry {
+                    if self.appState.slideout.state.isOpen {
+                        // Already open: stays open, preview content updates live
+                    } else if self.panel.isVisible {
+                        self.appState.slideout.startAutoOpen()
+                    }
+                } else {
+                    self.appState.slideout.cancelAutoOpen()
+                    if self.appState.slideout.state.isOpen {
+                        self.appState.slideout.closePreview(animated: self.panel.isVisible)
+                    }
+                }
+            }
 
         // Warm the saved-frame cache before the first open.
         Task { [weak self] in
@@ -74,6 +100,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     deinit {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let mouseMoveMonitor { NSEvent.removeMonitor(mouseMoveMonitor) }
     }
 
     var isVisible: Bool { panel.isVisible }
@@ -93,20 +120,29 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         appState.panelWillShow()
         suppressFrameSave = true
+        var targetSize = savedFrame?.size ?? Self.panelSize
+        targetSize.width = appState.slideout.contentWidth
+
         if let saved = savedFrame, frameIsOnAVisibleScreen(saved) {
             // Reopen exactly where the user last dragged/resized it.
-            panel.setFrame(saved, display: false)
+            var reopenFrame = saved
+            reopenFrame.size.width = targetSize.width
+            panel.setFrame(reopenFrame, display: false)
         } else if let screen = screenWithMouse() {
             let frame = screen.visibleFrame
-            let size = savedFrame?.size ?? Self.panelSize
             let origin = NSPoint(
-                x: frame.midX - size.width / 2,
-                y: frame.midY - size.height / 2
+                x: frame.midX - targetSize.width / 2,
+                y: frame.midY - targetSize.height / 2
             )
-            panel.setFrame(NSRect(origin: origin, size: size), display: false)
+            panel.setFrame(NSRect(origin: origin, size: targetSize), display: false)
         }
         suppressFrameSave = false
+        appState.slideout.closePreview(animated: false)
+        if appState.selectedEntry != nil {
+            appState.slideout.startAutoOpen()
+        }
         panel.makeKeyAndOrderFront(nil)
+        installMouseMoveMonitor()
         // Focus the search field once the panel is actually key.
         Task { @MainActor [appState] in
             appState.searchFocusToken += 1
@@ -115,11 +151,13 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func hide(reactivatePreviousApp: Bool = false) {
         guard panel.isVisible else { return }
-        previewController?.hide()
+        appState.slideout.cancelAutoOpen()
+        appState.slideout.closePreview(animated: false)
+        removeMouseMoveMonitor()
         panel.orderOut(nil)
         if reactivatePreviousApp {
             if let previousApp, !previousApp.isTerminated {
-                previousApp.activate(options: .activateIgnoringOtherApps)
+                previousApp.activate()
             } else {
                 NSApp.hide(nil)
             }
@@ -133,11 +171,6 @@ final class PanelController: NSObject, NSWindowDelegate {
               let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
-    }
-
-    /// Debug-only companion: snapshot of the preview window, if visible.
-    func writePreviewSnapshot(to url: URL) {
-        previewController?.writeSnapshot(to: url)
     }
 
     private func screenWithMouse() -> NSScreen? {
@@ -156,12 +189,15 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private func rememberCurrentFrame() {
         guard !suppressFrameSave, panel.isVisible else { return }
-        let frame = panel.frame
+        var frame = panel.frame
+        if appState.slideout.state.isOpen {
+            frame.size.width = appState.slideout.contentWidth
+        }
         savedFrame = frame
         // Debounced: windowDidMove fires continuously while dragging.
         frameSaveTask?.cancel()
         frameSaveTask = Task { [appState] in
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: Timing.frameSaveDebounceNanos)
             guard !Task.isCancelled else { return }
             try? await appState.store.setConfig(Self.frameConfigKey,
                                                 value: NSStringFromRect(frame))
@@ -176,13 +212,18 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         rememberCurrentFrame()
-        // The preview may need to flip sides near a screen edge.
-        previewController?.refresh()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
+        let width = panel.frame.width
+        let slideout = appState.slideout
+        if slideout.state.isOpen {
+            slideout.contentWidth = max(slideout.minimumContentWidth,
+                                        width - slideout.slideoutWidth)
+        } else {
+            slideout.contentWidth = max(slideout.minimumContentWidth, width)
+        }
         rememberCurrentFrame()
-        previewController?.refresh()
     }
 
     // MARK: - Keyboard
@@ -191,6 +232,28 @@ final class PanelController: NSObject, NSWindowDelegate {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, event.window === self.panel else { return event }
             return self.handleKeyDown(event)
+        }
+    }
+
+    /// Arms hover-selection on the first physical pointer movement after the
+    /// panel opens. Without this, a row that happens to sit under the
+    /// stationary cursor would be selected the instant the list appears,
+    /// hijacking blind paste (Enter pastes the selection).
+    private func installMouseMoveMonitor() {
+        guard mouseMoveMonitor == nil else { return }
+        mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDragged, .otherMouseDragged]
+        ) { [weak self] event in
+            guard let self, event.window === self.panel else { return event }
+            self.appState.armPointer()
+            return event
+        }
+    }
+
+    private func removeMouseMoveMonitor() {
+        if let mouseMoveMonitor {
+            NSEvent.removeMonitor(mouseMoveMonitor)
+            self.mouseMoveMonitor = nil
         }
     }
 
@@ -207,37 +270,8 @@ final class PanelController: NSObject, NSWindowDelegate {
         let chars = event.charactersIgnoringModifiers ?? ""
 
         if modifiers == .command {
-            switch chars {
-            case "f":
-                appState.searchFocusToken += 1
-                return nil
-            case "1":
-                appState.tab = .classic
-                return nil
-            case "2":
-                appState.tab = .media
-                return nil
-            case "3":
-                appState.tab = .shell
-                return nil
-            case "4":
-                appState.tab = .favs
-                return nil
-            case "p":
-                appState.togglePinSelected()
-                return nil
-            case "s", "b":
-                appState.toggleFavoriteSelected()
-                return nil
-            case "r":
-                appState.regexMode.toggle()
-                return nil
-            case "d":
-                appState.deleteSelected()
-                return nil
-            default:
-                return event // e.g. Cmd+A/C/V handled by the Edit menu
-            }
+            if handleCommandKey(chars) { return nil }
+            return event
         }
 
         // Option+Delete removes the selected entry — unless the user is
@@ -269,5 +303,33 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
 
         return event
+    }
+
+    /// Handles ⌘-modified shortcuts. Returns false when unhandled so the
+    /// event passes through (e.g. Cmd+A/C/V for the Edit menu).
+    private func handleCommandKey(_ chars: String) -> Bool {
+        switch chars {
+        case "f":
+            appState.searchFocusToken += 1
+        case "1":
+            appState.selectTab(.classic)
+        case "2":
+            appState.selectTab(.shell)
+        case "3":
+            appState.selectTab(.favs)
+        case "4":
+            appState.selectTab(.media)
+        case "p":
+            appState.togglePinSelected()
+        case "s", "b":
+            appState.toggleFavoriteSelected()
+        case "r":
+            appState.setRegexMode(!appState.regexMode)
+        case "d":
+            appState.deleteSelected()
+        default:
+            return false
+        }
+        return true
     }
 }

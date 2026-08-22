@@ -3,7 +3,7 @@ import Carbon.HIToolbox
 import os
 
 /// Synthesizes a Cmd+V keystroke into the frontmost app after clap writes to
-/// the pasteboard (Maccy-style paste-on-select).
+/// the pasteboard (paste-on-select).
 enum Paster {
     private static let logger = Logger(subsystem: "com.spongycode.clap", category: "paste")
     private static var lastPromptTime: Date?

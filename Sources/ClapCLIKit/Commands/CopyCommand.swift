@@ -63,12 +63,9 @@ enum CopyCommand {
     }
 
     static func pasteboardType(for format: String) -> NSPasteboard.PasteboardType {
-        switch format.lowercased() {
-        case "png": return .png
-        case "tiff", "tif": return .tiff
-        case "jpeg", "jpg": return NSPasteboard.PasteboardType("public.jpeg")
-        case "gif": return NSPasteboard.PasteboardType("com.compuserve.gif")
-        default: return .tiff
+        if let uti = ImageFormats.uti(forFormat: format) {
+            return NSPasteboard.PasteboardType(uti)
         }
+        return .tiff
     }
 }

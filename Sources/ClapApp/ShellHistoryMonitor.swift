@@ -15,7 +15,8 @@ import os
 actor ShellHistoryMonitor {
 
     private let store: ClipboardStore
-    private let logger = Logger(subsystem: "com.spongycode.clap", category: "shell")
+    private let logger = Logger(subsystem: ClapIdentity.bundleID, category: "shell")
+    private static let pollIntervalNanos = Timing.shellHistoryPollNanos
 
     private var pollTask: Task<Void, Never>?
     private var enabled = true
@@ -32,11 +33,15 @@ actor ShellHistoryMonitor {
         guard pollTask == nil else { return }
         await refreshConfig()
 
-        // One-time auto import of existing shell history if not yet imported
-        let alreadyImported = ((try? await store.config("shell.initial_imported")) ?? "0") == "1"
+        // One-time auto import of existing shell history if not yet imported.
+        // The marker is only set on success so a failed first import retries
+        // on the next launch.
+        let alreadyImported = ((try? await store.config(ConfigKey.shellInitialImported)) ?? "0") == "1"
         if !alreadyImported, enabled, let url = fileURL {
-            await autoImportInitialHistory(from: url)
-            try? await store.setConfig("shell.initial_imported", value: "1")
+            let imported = await autoImportInitialHistory(from: url)
+            if imported {
+                try? await store.setConfig(ConfigKey.shellInitialImported, value: "1")
+            }
         }
 
         if let url = fileURL, let (ino, size) = Self.fileStat(url) {
@@ -46,20 +51,25 @@ actor ShellHistoryMonitor {
         pollTask = Task(priority: .utility) { [weak self] in
             while !Task.isCancelled {
                 await self?.poll()
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: Self.pollIntervalNanos)
             }
         }
         logger.info("shell history monitor started")
     }
 
-    private func autoImportInitialHistory(from url: URL) async {
-        guard let data = try? Data(contentsOf: url) else { return }
+    private func autoImportInitialHistory(from url: URL) async -> Bool {
+        guard let data = try? Data(contentsOf: url) else { return false }
         let parsed = ShellHistoryParser.parse(data)
-        guard !parsed.isEmpty else { return }
+        guard !parsed.isEmpty else { return false }
         let batch = parsed.map { (text: $0.text, executedAt: $0.executedAt) }
-        if let result = try? await store.ingestShellBatch(batch, source: url.lastPathComponent) {
+        do {
+            let result = try await store.ingestShellBatch(batch, source: url.lastPathComponent)
             logger.info("initial auto-import completed: \(result.imported) new, \(result.merged) merged")
             IPC.post(.storeChanged)
+            return true
+        } catch {
+            logger.error("initial auto-import failed: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -69,7 +79,7 @@ actor ShellHistoryMonitor {
     }
 
     func refreshConfig() async {
-        enabled = ((try? await store.config("shell.enabled")) ?? "1") == "1"
+        enabled = ((try? await store.config(ConfigKey.shellEnabled)) ?? "1") == "1"
         let configured = (try? await store.config("shell.histfile")) ?? ""
         if !configured.isEmpty {
             fileURL = URL(fileURLWithPath: (configured as NSString).expandingTildeInPath)
