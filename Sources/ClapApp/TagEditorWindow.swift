@@ -171,9 +171,9 @@ struct TagEditorView: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .background(Color.primary.opacity(0.02))
         }
         .frame(width: 440)
+        .background(AdaptivePanelBackground().ignoresSafeArea())
         .onAppear {
             tags = entry.tags
             isFocused = true

@@ -140,6 +140,9 @@ struct TextAnalysisTests {
         #expect(TextSummaries.relativeTime(now.addingTimeInterval(-300), now: now) == "5m")
         #expect(TextSummaries.relativeTime(now.addingTimeInterval(-7200), now: now) == "2h")
         #expect(TextSummaries.relativeTime(now.addingTimeInterval(-3 * 86_400), now: now) == "3d")
+        #expect(TextSummaries.relativeTime(now.addingTimeInterval(-14 * 86_400), now: now) == "2w")
+        #expect(TextSummaries.relativeTime(now.addingTimeInterval(-60 * 86_400), now: now) == "2mo")
+        #expect(TextSummaries.relativeTime(now.addingTimeInterval(-400 * 86_400), now: now) == "1y")
     }
 
     // MARK: ImageFormats

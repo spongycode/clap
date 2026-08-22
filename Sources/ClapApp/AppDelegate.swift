@@ -137,7 +137,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     let dir = URL(fileURLWithPath: snapshotDir, isDirectory: true)
                     self.panelController.writeSnapshot(to: dir.appendingPathComponent("panel.png"))
-                    self.panelController.writePreviewSnapshot(to: dir.appendingPathComponent("preview.png"))
                 }
             }
         }

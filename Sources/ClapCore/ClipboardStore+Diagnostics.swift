@@ -14,7 +14,7 @@ extension ClipboardStore {
         ConfigKey.retentionDays: "0",
         ConfigKey.launchAtLogin: "0",
         // Synthesize Cmd+V into the frontmost app after copying from the UI
-        // (Maccy-style). Requires Accessibility permission; falls back to
+        // Requires Accessibility permission; falls back to
         // copy-only when not granted.
         ConfigKey.pasteOnCopy: "1",
         // Shell history (zsh/bash) ingestion.

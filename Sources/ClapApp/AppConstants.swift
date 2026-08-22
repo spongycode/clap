@@ -25,15 +25,10 @@ enum AppAlpha {
     enum Fill {
         static let subtle: Double = 0.04
         static let soft: Double = 0.06
-        static let searchField: Double = 0.05
-        static let rowSelected: Double = 0.36
-        static let pillSelectedCount: Double = 0.20
     }
     enum Stroke {
         static let hairline: Double = 0.08
         static let panelBorder: Double = 0.12
-        static let rowSelectedBorder: Double = 0.45
-        static let swatch: Double = 0.20
     }
     enum Hover {
         static let fill: Double = 0.09

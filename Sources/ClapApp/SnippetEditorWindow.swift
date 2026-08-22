@@ -107,10 +107,9 @@ struct SnippetEditorView: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(width: 440, height: 260)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AdaptivePanelBackground().ignoresSafeArea())
         .onAppear {
             text = entry.shortcut ?? ""
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {

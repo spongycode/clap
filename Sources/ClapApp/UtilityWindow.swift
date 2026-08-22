@@ -29,10 +29,27 @@ class UtilityWindowController: NSObject, NSWindowDelegate {
             window.title = title
             window.isReleasedWhenClosed = false
             window.delegate = self
+            // System Settings-style chrome: no visible titlebar strip; the
+            // traffic lights float directly on the Liquid Glass and the
+            // material runs edge to edge. Dragging works anywhere because
+            // of isMovableByWindowBackground.
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
+            window.isMovableByWindowBackground = true
             window.center()
             self.window = window
         }
-        window?.contentView = NSHostingView(rootView: rootView)
+        // Esc closes the window (hidden cancel-action button).
+        let chrome = rootView
+            .background {
+                Button("Close") { self.close() }
+                    .keyboardShortcut(.cancelAction)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+            }
+        window?.contentView = NSHostingView(rootView: chrome)
         window?.center()
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)

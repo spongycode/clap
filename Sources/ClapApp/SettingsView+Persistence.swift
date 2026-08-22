@@ -25,7 +25,7 @@ extension SettingsView {
     private func enqueueSave(key: String, value: String) {
         let previous = saveTasks[key]
         saveTasks[key] = Task {
-            _ = try? await previous?.value
+            _ = await previous?.value
             guard !Task.isCancelled else { return }
             do {
                 try await self.store.setConfig(key, value: value)

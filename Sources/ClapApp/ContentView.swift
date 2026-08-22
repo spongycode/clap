@@ -5,26 +5,38 @@ import ClapCore
 struct ContentView: View {
     @EnvironmentObject private var state: AppState
     @FocusState private var searchFocused: Bool
+    @State private var lastEntry: ClipboardEntry?
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            content
+        SlideoutView(controller: state.slideout) {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                content
+            }
+        } slideout: {
+            if let entry = state.selectedEntry ?? lastEntry {
+                PreviewView(entry: entry)
+            } else {
+                EmptyView()
+            }
         }
-        // Flexible: tracks the window as the user resizes the panel.
-        .frame(minWidth: PanelController.minPanelSize.width,
-               maxWidth: .infinity,
-               minHeight: PanelController.minPanelSize.height,
+        .frame(minHeight: PanelController.minPanelSize.height,
                maxHeight: .infinity)
-        .background(VisualEffectBackground())
+        .background(AdaptivePanelBackground())
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.primary.opacity(AppAlpha.Stroke.panelBorder), lineWidth: 1)
         )
+        .overlay(EdgeResizeOverlay())
         .onAppear { searchFocused = true }
         .onChange(of: state.searchFocusToken) { _, _ in searchFocused = true }
+        .onChange(of: state.selectedEntry) { _, newEntry in
+            if let newEntry {
+                lastEntry = newEntry
+            }
+        }
     }
 
     // MARK: - Header (search + tabs + gear)

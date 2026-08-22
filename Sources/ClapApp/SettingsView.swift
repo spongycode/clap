@@ -58,8 +58,20 @@ struct SettingsView: View {
     @State private var newExclusion = ""
 
     var body: some View {
-        formWithLimitHandlers
-            .onChange(of: shellEnabled) { _, value in save(ConfigKey.shellEnabled, value ? "1" : "0") }
+        ZStack(alignment: .top) {
+            AdaptivePanelBackground()
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: 0)
+
+                formWithLimitHandlers
+                    .scrollContentBackground(.hidden)
+                    .clipped()
+            }
+        }
+        .onChange(of: shellEnabled) { _, value in save(ConfigKey.shellEnabled, value ? "1" : "0") }
             .onChange(of: shellHistfile) { _, value in save(ConfigKey.shellHistfile, value.trimmingCharacters(in: .whitespaces)) }
             .onChange(of: retentionDays) { _, value in save(ConfigKey.retentionDays, String(value)) }
             .onChange(of: hotkey) { _, value in save(ConfigKey.uiHotkey, value) }

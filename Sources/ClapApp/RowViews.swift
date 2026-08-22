@@ -11,47 +11,50 @@ struct EntryRow: View {
     private var isSelected: Bool { state.selectedID == entry.id }
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 9) {
             leadingIcon
             Text(highlightedPreview)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .font(entry.type == .shell ? .system(size: 13, design: .monospaced) : .system(size: 14))
-            Spacer(minLength: 8)
-            if let shortcut = entry.shortcut, !shortcut.isEmpty {
-                Text(shortcut)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.purple)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(Color.purple.opacity(0.12))
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(Color.purple.opacity(0.25), lineWidth: 0.5)
-                            )
-                    )
+
+            Spacer(minLength: 6)
+
+            HStack(spacing: 6) {
+                if let shortcut = entry.shortcut, !shortcut.isEmpty {
+                    Text(shortcut)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            Capsule()
+                                .fill(Color.purple.opacity(0.12))
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(Color.purple.opacity(0.25), lineWidth: 0.5)
+                                )
+                        )
+                }
+                ForEach(entry.tags.prefix(2), id: \.self) { tag in
+                    TagPillView(tag: tag)
+                }
+                if entry.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.orange)
+                }
+                if entry.isFavorite {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.red)
+                }
+                Text(TextSummaries.relativeTime(entry.lastUsedAt, now: Date()))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
             }
-            ForEach(entry.tags.prefix(2), id: \.self) { tag in
-                TagPillView(tag: tag)
-            }
-            if entry.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.orange)
-            }
-            if entry.isFavorite {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.red)
-            }
-            Text(TextSummaries.relativeTime(entry.lastUsedAt, now: Date()))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .frame(width: 48, alignment: .trailing)
-                .lineLimit(1)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 7.5)
@@ -89,7 +92,7 @@ struct EntryRow: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
-        } else if let parsed = ColorParser.parse(entry.content) {
+        } else if let content = entry.content, content.count <= 100, let parsed = ColorParser.parse(content) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(Color(red: parsed.red, green: parsed.green, blue: parsed.blue,
                             opacity: parsed.alpha))
@@ -99,12 +102,12 @@ struct EntryRow: View {
                         .strokeBorder(Color.primary.opacity(0.20), lineWidth: 1)
                 )
                 .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 0.5)
-        } else if JWTData.parse(entry.content) != nil {
+        } else if let content = entry.content, content.count <= 20_000, JWTData.parse(content) != nil {
             Image(systemName: "key.horizontal.fill")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.indigo)
                 .frame(width: 18)
-        } else if EpochData.parse(entry.content) != nil {
+        } else if let content = entry.content, content.count <= 50, EpochData.parse(content) != nil {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.orange)
@@ -421,17 +424,4 @@ struct ThumbnailView: View {
                 image = await state.thumbnail(for: entry)
             }
     }
-}
-
-/// Translucent panel background.
-struct VisualEffectBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .popover
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
 
     let store: ClipboardStore
     let monitor: PasteboardMonitor
+    let slideout = SlideoutController()
 
     /// Set by PanelController — closes the panel.
     var onCloseRequest: (() -> Void)?
@@ -140,6 +141,8 @@ final class AppState: ObservableObject {
     /// and disarm hover selection until the pointer moves again.
     func panelWillShow() {
         searchDebounceTask?.cancel()
+        slideout.cancelAutoOpen()
+        slideout.closePreview(animated: false)
         rawQuery = ""
         selectedID = nil
         pointerArmed = false

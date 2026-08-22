@@ -1,6 +1,7 @@
 import AppKit
 import ClapCore
 import SwiftUI
+import Combine
 
 /// Borderless nonactivating floating panel hosting the SwiftUI UI.
 final class ClapPanel: NSPanel {
@@ -18,15 +19,15 @@ final class ClapPanel: NSPanel {
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
 
-    static let panelSize = NSSize(width: 780, height: 520)
-    static let minPanelSize = NSSize(width: 520, height: 360)
+    static let panelSize = NSSize(width: 480, height: 520)
+    static let minPanelSize = NSSize(width: 460, height: 280)
     private static let frameConfigKey = ConfigKey.uiPanelFrame
 
     private let panel: ClapPanel
     private let appState: AppState
     private var keyMonitor: Any?
     private var mouseMoveMonitor: Any?
-    private var previewController: PreviewController?
+    private var selectionCancellable: AnyCancellable?
 
     private var previousApp: NSRunningApplication?
 
@@ -54,7 +55,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
-        panel.animationBehavior = .utilityWindow
+        panel.animationBehavior = .none
         panel.becomesKeyOnlyIfNeeded = false
         panel.isReleasedWhenClosed = false
         panel.minSize = Self.minPanelSize
@@ -64,8 +65,28 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.contentView = NSHostingView(rootView: ContentView().environmentObject(appState))
 
-        previewController = PreviewController(appState: appState, parent: panel)
         installKeyMonitor()
+
+        appState.slideout.window = panel
+
+        selectionCancellable = appState.$selectedID
+            .removeDuplicates()
+            .sink { [weak self] newID in
+                guard let self else { return }
+                let hasEntry = (newID != nil)
+                if hasEntry {
+                    if self.appState.slideout.state.isOpen {
+                        // Already open: stays open, preview content updates live
+                    } else if self.panel.isVisible {
+                        self.appState.slideout.startAutoOpen()
+                    }
+                } else {
+                    self.appState.slideout.cancelAutoOpen()
+                    if self.appState.slideout.state.isOpen {
+                        self.appState.slideout.closePreview(animated: self.panel.isVisible)
+                    }
+                }
+            }
 
         // Warm the saved-frame cache before the first open.
         Task { [weak self] in
@@ -99,19 +120,27 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         appState.panelWillShow()
         suppressFrameSave = true
+        var targetSize = savedFrame?.size ?? Self.panelSize
+        targetSize.width = appState.slideout.contentWidth
+
         if let saved = savedFrame, frameIsOnAVisibleScreen(saved) {
             // Reopen exactly where the user last dragged/resized it.
-            panel.setFrame(saved, display: false)
+            var reopenFrame = saved
+            reopenFrame.size.width = targetSize.width
+            panel.setFrame(reopenFrame, display: false)
         } else if let screen = screenWithMouse() {
             let frame = screen.visibleFrame
-            let size = savedFrame?.size ?? Self.panelSize
             let origin = NSPoint(
-                x: frame.midX - size.width / 2,
-                y: frame.midY - size.height / 2
+                x: frame.midX - targetSize.width / 2,
+                y: frame.midY - targetSize.height / 2
             )
-            panel.setFrame(NSRect(origin: origin, size: size), display: false)
+            panel.setFrame(NSRect(origin: origin, size: targetSize), display: false)
         }
         suppressFrameSave = false
+        appState.slideout.closePreview(animated: false)
+        if appState.selectedEntry != nil {
+            appState.slideout.startAutoOpen()
+        }
         panel.makeKeyAndOrderFront(nil)
         installMouseMoveMonitor()
         // Focus the search field once the panel is actually key.
@@ -122,8 +151,9 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func hide(reactivatePreviousApp: Bool = false) {
         guard panel.isVisible else { return }
+        appState.slideout.cancelAutoOpen()
+        appState.slideout.closePreview(animated: false)
         removeMouseMoveMonitor()
-        previewController?.hide()
         panel.orderOut(nil)
         if reactivatePreviousApp {
             if let previousApp, !previousApp.isTerminated {
@@ -143,11 +173,6 @@ final class PanelController: NSObject, NSWindowDelegate {
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
     }
 
-    /// Debug-only companion: snapshot of the preview window, if visible.
-    func writePreviewSnapshot(to url: URL) {
-        previewController?.writeSnapshot(to: url)
-    }
-
     private func screenWithMouse() -> NSScreen? {
         let mouse = NSEvent.mouseLocation
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
@@ -164,7 +189,10 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private func rememberCurrentFrame() {
         guard !suppressFrameSave, panel.isVisible else { return }
-        let frame = panel.frame
+        var frame = panel.frame
+        if appState.slideout.state.isOpen {
+            frame.size.width = appState.slideout.contentWidth
+        }
         savedFrame = frame
         // Debounced: windowDidMove fires continuously while dragging.
         frameSaveTask?.cancel()
@@ -184,13 +212,18 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         rememberCurrentFrame()
-        // The preview may need to flip sides near a screen edge.
-        previewController?.refresh()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
+        let width = panel.frame.width
+        let slideout = appState.slideout
+        if slideout.state.isOpen {
+            slideout.contentWidth = max(slideout.minimumContentWidth,
+                                        width - slideout.slideoutWidth)
+        } else {
+            slideout.contentWidth = max(slideout.minimumContentWidth, width)
+        }
         rememberCurrentFrame()
-        previewController?.refresh()
     }
 
     // MARK: - Keyboard

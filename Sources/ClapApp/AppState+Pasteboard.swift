@@ -66,7 +66,7 @@ extension AppState {
         return true
     }
 
-    /// Maccy-style paste-on-select: the panel never activated clap, so the
+    /// Paste-on-select: the panel never activated clap, so the
     /// app the user came from still has key focus. Small delay so the panel
     /// is gone and the pasteboard write has settled before the synthetic
     /// Cmd+V lands.

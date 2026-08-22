@@ -6,24 +6,36 @@ public enum TextSummaries {
     /// Collapses all whitespace runs and control characters to single spaces,
     /// trims, then truncates to `maxChars` appending an ellipsis when cut.
     public static func singleLine(_ s: String, maxChars: Int) -> String {
+        guard !s.isEmpty else { return "" }
+        let maxScan = max(maxChars * 4, 1000)
+        let prefixSlice = s.count > maxScan ? s.prefix(maxScan) : s[...]
         var collapsed = ""
         var previousWasSpace = true
-        for scalar in s.unicodeScalars {
+        var nonSpaceCount = 0
+        for scalar in prefixSlice.unicodeScalars {
             if scalar.properties.isWhitespace || scalar.value < 0x20 || scalar.value == 0x7f {
-                if !previousWasSpace { collapsed.unicodeScalars.append(" ") }
-                previousWasSpace = true
+                if !previousWasSpace {
+                    collapsed.unicodeScalars.append(" ")
+                    previousWasSpace = true
+                }
             } else {
                 collapsed.unicodeScalars.append(scalar)
                 previousWasSpace = false
+                nonSpaceCount += 1
+                if nonSpaceCount >= maxChars + 1 {
+                    break
+                }
             }
         }
         let trimmed = collapsed.trimmingCharacters(in: .whitespaces)
-        guard trimmed.count > maxChars else { return trimmed }
-        let cutoff = trimmed.index(trimmed.startIndex, offsetBy: maxChars)
-        return String(trimmed[..<cutoff]) + "…"
+        if s.count > maxChars || trimmed.count > maxChars {
+            let cutoff = trimmed.index(trimmed.startIndex, offsetBy: min(trimmed.count, maxChars))
+            return String(trimmed[..<cutoff]) + "…"
+        }
+        return trimmed
     }
 
-    /// Compact relative time: "now", "5m", "2h", "3d", otherwise "yyyy-MM-dd".
+    /// Compact relative time: "now", "5m", "2h", "3d", "2w", "3mo", "1y".
     public static func relativeTime(_ date: Date, now: Date) -> String {
         let interval = now.timeIntervalSince(date)
         let elapsed = interval >= 0 ? interval : -interval
@@ -32,9 +44,9 @@ public enum TextSummaries {
         if elapsed < 3600 { return "\(Int(elapsed / 60))m\(suffix)" }
         if elapsed < 86_400 { return "\(Int(elapsed / 3600))h\(suffix)" }
         if elapsed < 7 * 86_400 { return "\(Int(elapsed / 86_400))d\(suffix)" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        if elapsed < 30 * 86_400 { return "\(max(1, Int(elapsed / (7 * 86_400))))w\(suffix)" }
+        if elapsed < 365 * 86_400 { return "\(max(1, Int(elapsed / (30 * 86_400))))mo\(suffix)" }
+        return "\(max(1, Int(elapsed / (365 * 86_400))))y\(suffix)"
     }
 }
 

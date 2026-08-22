@@ -3,114 +3,121 @@ import SwiftUI
 import Combine
 import ClapCore
 
-/// Floating preview attached to the main panel (Maccy-style): shows the
-/// selected entry's full content (scrollable text / scaled image) plus the
-/// metadata the list can't fit — id, dates, use count, size, source app.
-///
-/// Never becomes key: the main panel hides on resignKey, so the preview must
-/// be a passive child window.
-final class ClapPreviewPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-}
+/// High-performance scrollable text preview using AppKit's TextKit 2 layout manager.
+/// Virtualizes long text (1,000+ chars up to megabytes) with native text selection.
+struct LargeTextPreviewView: NSViewRepresentable {
+    let text: String
+    let query: String
+    let isRegex: Bool
 
-@MainActor
-final class PreviewController {
-
-    static let sideSize = NSSize(width: 400, height: 520)
-    static let bandHeight: CGFloat = 300
-    private static let gap: CGFloat = 8
-
-    private let preview: ClapPreviewPanel
-    private let appState: AppState
-    private weak var parent: NSPanel?
-    private var selectionCancellable: AnyCancellable?
-    private var shownEntryKey: String?
-
-    init(appState: AppState, parent: NSPanel) {
-        self.appState = appState
-        self.parent = parent
-        preview = ClapPreviewPanel(
-            contentRect: NSRect(origin: .zero, size: Self.sideSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
-        )
-        preview.isFloatingPanel = true
-        preview.level = .floating
-        preview.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        preview.isOpaque = false
-        preview.backgroundColor = .clear
-        preview.hasShadow = true
-        preview.isReleasedWhenClosed = false
-        preview.becomesKeyOnlyIfNeeded = true
-
-        // Debounced: arrowing quickly through rows shouldn't churn previews.
-        selectionCancellable = appState.$selectedID
-            .removeDuplicates()
-            .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
-            .sink { [weak self] _ in self?.refresh() }
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
     }
 
-    /// Recomputes visibility, content, and placement for the current selection.
-    func refresh() {
-        guard let parent, parent.isVisible, let entry = appState.selectedEntry else {
-            hide()
+    final class Coordinator {
+        var lastText: String?
+        var lastQuery: String?
+        var lastRegex: Bool?
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = NSTextView(usingTextLayoutManager: true)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.drawsBackground = false
+        textView.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+        textView.textColor = .labelColor
+        textView.textContainerInset = NSSize(width: 14, height: 10)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+
+        context.coordinator.lastText = text
+        context.coordinator.lastQuery = query
+        context.coordinator.lastRegex = isRegex
+        applyText(to: textView)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        let coord = context.coordinator
+        if coord.lastText == text && coord.lastQuery == query && coord.lastRegex == isRegex {
             return
         }
-        let stateKey = "\(entry.id)-\(entry.isPinned)-\(entry.isFavorite)-\(entry.useCount)"
-            + "-\(entry.lastUsedAt.timeIntervalSince1970)-\(appState.trimmedQuery)-\(appState.regexMode)"
-        if shownEntryKey != stateKey || preview.contentView == nil {
-            shownEntryKey = stateKey
-            preview.contentView = NSHostingView(
-                rootView: PreviewView(entry: entry).environmentObject(appState))
+        coord.lastText = text
+        coord.lastQuery = query
+        coord.lastRegex = isRegex
+        applyText(to: textView)
+    }
+
+    private func applyText(to textView: NSTextView) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            textView.string = text
+            textView.textColor = .labelColor
+            textView.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+            return
         }
-        place(around: parent.frame, on: parent.screen ?? NSScreen.main)
-        if preview.parent == nil {
-            parent.addChildWindow(preview, ordered: .above)
-        }
-        preview.orderFront(nil)
-    }
 
-    func hide() {
-        shownEntryKey = nil
-        preview.parent?.removeChildWindow(preview)
-        preview.orderOut(nil)
-        preview.contentView = nil
-    }
+        let font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+        let defaultAttributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.labelColor
+        ]
 
-    /// Debug-only (see AppDelegate): renders the preview's view hierarchy to
-    /// a PNG for headless UI verification.
-    func writeSnapshot(to url: URL) {
-        guard let view = preview.contentView,
-              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
-        view.cacheDisplay(in: view.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: url)
-    }
+        let mutableAttr = NSMutableAttributedString(string: text, attributes: defaultAttributes)
 
-    /// Right of the panel, else left, else centered below, else centered
-    /// above — first placement that fits the visible screen area wins.
-    private func place(around panelFrame: NSRect, on screen: NSScreen?) {
-        guard let visible = screen?.visibleFrame else { return }
-        let side = NSSize(width: Self.sideSize.width, height: panelFrame.height)
-        let band = NSSize(width: panelFrame.width, height: Self.bandHeight)
+        let highlightBg = NSColor(red: 1.0, green: 0.88, blue: 0.15, alpha: 1.0)
+        let highlightFg = NSColor.black
 
-        var frame: NSRect
-        if panelFrame.maxX + Self.gap + side.width <= visible.maxX {
-            frame = NSRect(x: panelFrame.maxX + Self.gap, y: panelFrame.minY,
-                           width: side.width, height: side.height)
-        } else if panelFrame.minX - Self.gap - side.width >= visible.minX {
-            frame = NSRect(x: panelFrame.minX - Self.gap - side.width, y: panelFrame.minY,
-                           width: side.width, height: side.height)
-        } else if panelFrame.minY - Self.gap - band.height >= visible.minY {
-            frame = NSRect(x: panelFrame.minX, y: panelFrame.minY - Self.gap - band.height,
-                           width: band.width, height: band.height)
+        if isRegex {
+            if let regex = try? NSRegularExpression(pattern: trimmed, options: [.caseInsensitive]) {
+                let scanLength = min((text as NSString).length, 100_000)
+                let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: scanLength))
+                for match in matches {
+                    mutableAttr.addAttributes([
+                        .backgroundColor: highlightBg,
+                        .foregroundColor: highlightFg
+                    ], range: match.range)
+                }
+            }
         } else {
-            frame = NSRect(x: panelFrame.minX, y: panelFrame.maxY + Self.gap,
-                           width: band.width, height: min(band.height,
-                                                          visible.maxY - panelFrame.maxY - Self.gap))
+            let tokens = trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+            let nsString = text as NSString
+            let scanLength = min(nsString.length, 100_000)
+            for token in tokens {
+                var searchRange = NSRange(location: 0, length: scanLength)
+                while searchRange.location < scanLength {
+                    let found = nsString.range(of: token, options: .caseInsensitive, range: searchRange)
+                    if found.location != NSNotFound {
+                        mutableAttr.addAttributes([
+                            .backgroundColor: highlightBg,
+                            .foregroundColor: highlightFg
+                        ], range: found)
+                        let nextLoc = found.location + found.length
+                        if nextLoc >= scanLength { break }
+                        searchRange = NSRange(location: nextLoc, length: scanLength - nextLoc)
+                    } else {
+                        break
+                    }
+                }
+            }
         }
-        preview.setFrame(frame, display: true)
+
+        textView.textStorage?.setAttributedString(mutableAttr)
     }
 }
 
@@ -125,10 +132,14 @@ private struct ParsedEntryContent {
     var jwt: JWTData?
     var epoch: EpochData?
 
+    var hasCards: Bool {
+        color != nil || base64Decoded != nil || urlDecoded != nil || jwt != nil || epoch != nil
+    }
+
     static let empty = ParsedEntryContent()
 
     static func parse(_ content: String?) -> ParsedEntryContent {
-        guard let content else { return .empty }
+        guard let content, !content.isEmpty, content.count <= 20_000 else { return .empty }
         return ParsedEntryContent(
             color: ColorParser.parse(content),
             base64Decoded: TextTransformer.decodeBase64(content),
@@ -155,12 +166,6 @@ struct PreviewView: View {
                 .padding(14)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(VisualEffectBackground())
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(AppAlpha.Stroke.panelBorder), lineWidth: 1)
-        )
         .task(id: entry.id) {
             parsed = await Task.detached(priority: .userInitiated) {
                 ParsedEntryContent.parse(entry.content)
@@ -176,35 +181,53 @@ struct PreviewView: View {
     @ViewBuilder
     private var contentSection: some View {
         if entry.type == .text || entry.type == .shell {
-            ScrollView([.vertical]) {
-                VStack(alignment: .leading, spacing: 12) {
-                    if let color = parsed.color {
-                        ColorCardView(color: color, source: entry.content ?? "")
+            VStack(alignment: .leading, spacing: 0) {
+                if parsed.hasCards {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let color = parsed.color {
+                            ColorCardView(color: color, source: entry.content ?? "")
+                        }
+                        if let decoded = parsed.base64Decoded {
+                            DecodedCardView(icon: "doc.text.magnifyingglass",
+                                            tint: .blue,
+                                            title: "Base64 Decoded",
+                                            decoded: decoded) { state.copyTransformedText(decoded) }
+                        }
+                        if let decoded = parsed.urlDecoded {
+                            DecodedCardView(icon: "link",
+                                            tint: .teal,
+                                            title: "URL Decoded",
+                                            decoded: decoded) { state.copyTransformedText(decoded) }
+                        }
+                        if let jwt = parsed.jwt {
+                            JWTCardView(jwt: jwt) { text in state.copyTransformedText(text) }
+                        }
+                        if let epoch = parsed.epoch {
+                            EpochCardView(epoch: epoch) { text in state.copyTransformedText(text) }
+                        }
                     }
-                    if let decoded = parsed.base64Decoded {
-                        DecodedCardView(icon: "doc.text.magnifyingglass",
-                                        tint: .blue,
-                                        title: "Base64 Decoded",
-                                        decoded: decoded) { state.copyTransformedText(decoded) }
-                    }
-                    if let decoded = parsed.urlDecoded {
-                        DecodedCardView(icon: "link",
-                                        tint: .teal,
-                                        title: "URL Decoded",
-                                        decoded: decoded) { state.copyTransformedText(decoded) }
-                    }
-                    if let jwt = parsed.jwt {
-                        JWTCardView(jwt: jwt) { text in state.copyTransformedText(text) }
-                    }
-                    if let epoch = parsed.epoch {
-                        EpochCardView(epoch: epoch) { text in state.copyTransformedText(text) }
-                    }
-                    Text(highlightedDisplayedText)
-                        .font(.system(size: 13, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 12)
+                    .padding(.bottom, 6)
                 }
-                .padding(14)
+
+                if let content = entry.content {
+                    if content.count >= 1_000 {
+                        LargeTextPreviewView(text: content,
+                                             query: state.trimmedQuery,
+                                             isRegex: state.regexMode)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ScrollView([.vertical]) {
+                            Text(highlightedDisplayedText)
+                                .font(.system(size: 13, design: .monospaced))
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                    }
+                }
             }
         } else {
             ImageContentView(entry: entry, image: image) { text in
@@ -287,6 +310,17 @@ struct PreviewView: View {
                 Text(entryTypeDescription)
                     .font(.system(size: 12))
             }
+            if entry.type == .image, let image {
+                let rep = image.representations.first
+                let w = rep?.pixelsWide ?? Int(image.size.width)
+                let h = rep?.pixelsHigh ?? Int(image.size.height)
+                GridRow {
+                    metaLabel("Dimensions")
+                    Text("\(w) × \(h) px")
+                        .font(.system(size: 12))
+                        .monospacedDigit()
+                }
+            }
             GridRow {
                 metaLabel("Size")
                 Text(ByteSize.format(entry.sizeBytes)).font(.system(size: 12))
@@ -306,9 +340,12 @@ struct PreviewView: View {
             if let app = entry.sourceApp {
                 GridRow {
                     metaLabel("From")
-                    Text(Self.appDisplayName(bundleID: app))
-                        .font(.system(size: 12))
-                        .help(app)
+                    HStack(spacing: 6) {
+                        AppIconView(bundleID: app, size: 14)
+                        Text(Self.appDisplayName(bundleID: app))
+                            .font(.system(size: 12))
+                            .help(app)
+                    }
                 }
             }
             if !entry.tags.isEmpty {
