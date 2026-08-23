@@ -155,7 +155,6 @@ struct PreviewView: View {
     let entry: ClipboardEntry
 
     @State private var image: NSImage?
-    @State private var idCopied = false
     @State private var parsed: ParsedEntryContent = .empty
 
     var body: some View {
@@ -242,67 +241,66 @@ struct PreviewView: View {
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
             GridRow {
                 metaLabel("Actions")
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     if entry.type == .image, let ocrText = entry.content, !ocrText.isEmpty {
-                        Button {
+                        IconActionButton(systemImage: "doc.text.viewfinder",
+                                         help: "Copy extracted text (OCR)") {
                             state.copyTransformedText(ocrText)
-                        } label: {
-                            Label("Copy Text", systemImage: "doc.text.viewfinder")
-                                .font(.system(size: 11))
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help("Copy recognized OCR text from this image")
                     }
+
                     if entry.type == .text || entry.type == .shell,
-                       let content = entry.content, content.count <= TextTransformer.maxTransformLength {
-                        Menu {
-                            TransformMenuContent(content: content) { transformed in
-                                state.copyTransformedText(transformed)
+                       let content = entry.content,
+                       content.count <= TextTransformer.maxTransformLength {
+                        IconMenu(systemImage: "textformat") {
+                            ForEach(CaseConverter.CaseStyle.allCases) { style in
+                                Button(style.rawValue) {
+                                    state.copyTransformedText(
+                                        CaseConverter.convert(content, to: style))
+                                }
                             }
-                        } label: {
-                            Label("Copy as…", systemImage: "textformat")
-                                .font(.system(size: 11))
                         }
-                        .menuStyle(.button)
-                        .controlSize(.small)
-                        .help("Convert text case or encode/decode and copy directly to clipboard")
+                        .help("Copy as… camelCase, snake_case, kebab-case, UPPER, lower…")
+                        .accessibilityLabel("Copy as different text case")
+
+                        IconMenu(systemImage: "chevron.left.forwardslash.chevron.right") {
+                            Button("Base64 Encode") {
+                                state.copyTransformedText(TextTransformer.encodeBase64(content))
+                            }
+                            if let decoded = TextTransformer.decodeBase64(content) {
+                                Button("Base64 Decode") {
+                                    state.copyTransformedText(decoded)
+                                }
+                            }
+                            Divider()
+                            Button("URL Encode") {
+                                state.copyTransformedText(TextTransformer.encodeURL(content))
+                            }
+                            if let decoded = TextTransformer.decodeURL(content) {
+                                Button("URL Decode") {
+                                    state.copyTransformedText(decoded)
+                                }
+                            }
+                        }
+                        .help("Copy Base64- or URL-encoded / decoded text")
+                        .accessibilityLabel("Copy encoded or decoded text")
                     }
 
                     if entry.type == .text || entry.type == .shell {
-                        Button {
+                        IconActionButton(systemImage: entry.shortcut != nil ? "bolt.fill" : "bolt",
+                                         help: entry.shortcut != nil
+                                             ? "Snippet shortcut: \(entry.shortcut ?? "")"
+                                             : "Assign a snippet abbreviation (e.g. ;email)") {
                             state.promptSetShortcut(entry)
-                        } label: {
-                            Label(entry.shortcut ?? "Shortcut",
-                                  systemImage: entry.shortcut != nil ? "keyboard.fill" : "keyboard")
-                                .font(.system(size: 11))
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help("Assign or edit a text abbreviation (e.g. ;email) that auto-expands this snippet")
                     }
 
-                    Button {
+                    IconActionButton(systemImage: entry.tags.isEmpty ? "tag" : "tag.fill",
+                                     help: entry.tags.isEmpty
+                                         ? "Add tags"
+                                         : "Tags: \(entry.tags.joined(separator: ", "))") {
                         state.promptManageTags(entry)
-                    } label: {
-                        Label(entry.tags.isEmpty ? "Tags" : "\(entry.tags.count) Tags",
-                              systemImage: entry.tags.isEmpty ? "tag" : "tag.fill")
-                            .font(.system(size: 11))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Manage tags and custom pinboards for this entry")
-
-                    Button {
-                        copyID()
-                    } label: {
-                        Label(idCopied ? "Copied" : "Copy ID",
-                              systemImage: idCopied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Copy the numeric ID for CLI use, e.g. clap get \(entry.id)")
                 }
             }
             GridRow {
@@ -337,7 +335,19 @@ struct PreviewView: View {
                 metaLabel(entry.type == .shell ? "Times run" : "Times used")
                 Text(String(entry.useCount)).font(.system(size: 12))
             }
-            if let app = entry.sourceApp {
+            if entry.type == .shell {
+                GridRow {
+                    metaLabel("From")
+                    HStack(spacing: 6) {
+                        // Shell rows have no source bundle id; Terminal.app's
+                        // icon is the honest stand-in.
+                        AppIconView(bundleID: "com.apple.Terminal", size: 14)
+                        Text(Self.shellSourceName(entry.sourceApp))
+                            .font(.system(size: 12))
+                            .help(entry.sourceApp ?? "shell")
+                    }
+                }
+            } else if let app = entry.sourceApp {
                 GridRow {
                     metaLabel("From")
                     HStack(spacing: 6) {
@@ -416,26 +426,20 @@ struct PreviewView: View {
             .foregroundStyle(.secondary)
     }
 
-    /// Copies the numeric id, marked transient so the pasteboard monitor
-    /// doesn't record the id string as a new history entry.
-    private func copyID() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(String(entry.id), forType: .string)
-        pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        idCopied = true
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: Timing.copiedResetNanos)
-            idCopied = false
-        }
-    }
-
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter
     }()
+
+    /// ".zsh_history" -> "zsh history"; empty/unknown -> "Terminal".
+    static func shellSourceName(_ rawSource: String?) -> String {
+        var name = (rawSource ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.hasPrefix(".") { name.removeFirst() }
+        if name.hasSuffix("_history") { name.removeLast("_history".count) }
+        return name.isEmpty ? "Terminal" : "\(name) history"
+    }
 
     static func appDisplayName(bundleID: String) -> String {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
@@ -806,5 +810,58 @@ private struct ImageContentView: View {
             .padding(14)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Actions-row icon buttons
+
+/// Circular hover-highlighting icon button used across the Actions row.
+private struct IconActionButton: View {
+    let systemImage: String
+    let help: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(isHovered ? Color.primary : Color.secondary)
+                .frame(width: 26, height: 26)
+                .background(
+                    Circle()
+                        .fill(isHovered ? Color.primary.opacity(AppAlpha.Hover.fill) : Color.clear)
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// Dropdown variant of `IconActionButton`. Hover must be tracked on the
+/// Menu itself — SwiftUI never delivers onHover to a Menu's label content.
+private struct IconMenu<MenuItems: View>: View {
+    let systemImage: String
+    @ViewBuilder var items: () -> MenuItems
+
+    var body: some View {
+        Menu {
+            items()
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 12))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Circle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 }

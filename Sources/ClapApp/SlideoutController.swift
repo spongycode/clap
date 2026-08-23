@@ -49,7 +49,6 @@ public final class SlideoutController: ObservableObject {
     public weak var window: NSWindow?
 
     private var windowAnimationOrigin: CGPoint?
-    private var windowAnimationOriginBaseState: SlideoutState = .closed
     private var autoOpenTask: Task<Void, Never>?
     public var autoOpenDelayMs: Int = 1000
 
@@ -94,7 +93,6 @@ public final class SlideoutController: ObservableObject {
 
         if animated {
             windowAnimationOrigin = window.frame.origin
-            windowAnimationOriginBaseState = state
 
             withAnimation(.easeInOut(duration: Self.animationDuration)) {
                 state = .opening
@@ -136,7 +134,6 @@ public final class SlideoutController: ObservableObject {
 
         if animated {
             windowAnimationOrigin = window.frame.origin
-            windowAnimationOriginBaseState = state
 
             withAnimation(.easeInOut(duration: Self.animationDuration)) {
                 state = .closing

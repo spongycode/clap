@@ -21,8 +21,17 @@ if [ -d "$ROOT/Resources" ]; then
     cp -R "$ROOT/Resources/"* "$APP/Contents/Resources/" 2>/dev/null || true
 fi
 
-# Ad-hoc sign so the hotkey/app behave under Gatekeeper locally.
-codesign --force --deep -s - --identifier "com.spongycode.clap" "$APP"
+# Sign with the first available Apple Development identity so macOS
+# services that require stable signing (e.g. SMAppService login items)
+# accept the bundle; ad-hoc only as last resort.
+SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk '/Apple Development/ { print $2; exit }')"
+if [ -n "$SIGN_IDENTITY" ]; then
+    echo "Signing with identity $SIGN_IDENTITY"
+    codesign --force --deep -s "$SIGN_IDENTITY" --identifier "com.spongycode.clap" "$APP"
+else
+    codesign --force --deep -s - --identifier "com.spongycode.clap" "$APP"
+fi
 
 mkdir -p "$OUT/bin"
 cp "$BIN/clap" "$OUT/bin/clap"

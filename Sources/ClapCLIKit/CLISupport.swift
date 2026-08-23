@@ -35,6 +35,7 @@ enum CLI {
     }
 
     static var stdoutIsTTY: Bool { isatty(1) == 1 }
+    static var stdinIsTTY: Bool { isatty(0) == 1 }
 
     /// Runs a throwing async body, mapping errors to exit codes.
     /// Invalid regex -> exit 2; anything else -> exit 1. Never a stack trace.

@@ -342,7 +342,7 @@ struct SettingsView: View {
         paused = await configString(ConfigKey.monitoringPaused) == "1"
         snippetsEnabled = await configString(ConfigKey.snippetsEnabled) != "0"
         pasteOnCopy = await configString(ConfigKey.pasteOnCopy) != "0"
-        launchAtLogin = await configString(ConfigKey.launchAtLogin) == "1"
+        launchAtLogin = SMAppService.mainApp.status == .enabled
         if let raw = await configString(ConfigKey.exclusions),
            let data = raw.data(using: .utf8),
            let array = try? JSONDecoder().decode([String].self, from: data) {
@@ -385,8 +385,13 @@ struct SettingsView: View {
             launchError = nil
             save(ConfigKey.launchAtLogin, enabled ? "1" : "0")
         } catch {
-            // Typical in dev/unbundled builds where SMAppService is unavailable.
-            launchError = "Launch at login is unavailable: \(error.localizedDescription)"
+            // Ad-hoc builds are rejected by BTM. The app is signed with an
+            // Apple Development identity by make_app.sh when available, so
+            // this path should be rare — guide manual registration if hit.
+            launchError = """
+            Launch at login couldn't be registered (\(error.localizedDescription)). \
+            Add clap manually: System Settings › General › Login Items & Extensions.
+            """
             suppressLoginToggle = true
             launchAtLogin = !enabled
             Task { suppressLoginToggle = false }

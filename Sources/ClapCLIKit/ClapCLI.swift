@@ -15,6 +15,8 @@ public enum ClapCLI {
         "search": { await SearchCommand.run($0, context: $1) },
         "get": { await GetCommand.run($0, context: $1) },
         "copy": { await CopyCommand.run($0, context: $1) },
+        "add": { await AddCommand.run($0, context: $1) },
+        "in": { await AddCommand.run($0, context: $1) },
         "delete": { await DeleteCommand.run($0, context: $1) },
         "out": { await DeleteCommand.runOutAlias($0, context: $1) },
         "pin": { await PinCommand.run($0, pinned: true, context: $1) },
@@ -28,8 +30,8 @@ public enum ClapCLI {
         "import": { await ImportCommand.run($0, context: $1) },
         "pause": { await PauseCommand.run($0, paused: true, context: $1) },
         "resume": { await PauseCommand.run($0, paused: false, context: $1) },
-        // Hidden: seeds the store for testing/scripting. Not in help.
-        "_capture": { await CaptureCommand.run($0, context: $1) },
+        // Hidden: legacy spelling of `add` for existing scripts. Not in help.
+        "_capture": { await AddCommand.run($0, context: $1, legacyOutput: true) },
         // Hidden: runs eviction/retention/vacuum like the app's workers.
         "_maintain": { await MaintainCommand.run($0, context: $1) }
     ]
@@ -99,6 +101,8 @@ enum HelpText {
       clap get <id> [--json]
       clap copy <id>
       clap delete <id> | --text <text> | --regex <pat>
+      clap add <text> | -                                   Insert an entry (use - to read stdin)
+      clap in <text>                                        Alias for clap add
       clap out [<id> | <exact text>]                        Alias for clap delete
       clap pin <id> / clap unpin <id>
       clap tag add <id> <tag> / clap tag remove <id> <tag>

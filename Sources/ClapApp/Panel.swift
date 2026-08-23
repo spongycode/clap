@@ -214,6 +214,15 @@ final class PanelController: NSObject, NSWindowDelegate {
         rememberCurrentFrame()
     }
 
+    func windowDidResize(_ notification: Notification) {
+        // Live-sync while dragging an edge with the preview open; the list
+        // absorbs the delta and the pane keeps its width.
+        guard appState.slideout.state == .open else { return }
+        appState.slideout.contentWidth = max(
+            appState.slideout.minimumContentWidth,
+            panel.frame.width - appState.slideout.slideoutWidth)
+    }
+
     func windowDidEndLiveResize(_ notification: Notification) {
         let width = panel.frame.width
         let slideout = appState.slideout
