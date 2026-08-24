@@ -30,8 +30,13 @@ if [[ "$NEW" == "$CURRENT" && "$BUMP" != "none" ]]; then
     exit 1
 fi
 
-sed -i '' "s/public static let version = \"$CURRENT\"/public static let version = \"$NEW\"/" "$CLI_FILE"
-sed -i '' "s/clipboard & shell history manager · v$CURRENT/clipboard \& shell history manager · v$NEW/" \
+substitute_inplace() {
+    local pattern="$1" file="$2"
+    sed "$pattern" "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+}
+
+substitute_inplace "s/public static let version = \"$CURRENT\"/public static let version = \"$NEW\"/" "$CLI_FILE"
+substitute_inplace "s/clipboard & shell history manager · v$CURRENT/clipboard & shell history manager · v$NEW/" \
     Sources/ClapApp/SettingsView.swift
-sed -i '' "s/<string>$CURRENT<\/string>/<string>$NEW<\/string>/" Scripts/Info.plist
+substitute_inplace "s/<string>$CURRENT<\/string>/<string>$NEW<\/string>/" Scripts/Info.plist
 echo "$NEW"
