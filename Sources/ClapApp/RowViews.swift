@@ -87,11 +87,6 @@ struct EntryRow: View {
             ThumbnailView(entry: entry)
                 .frame(width: 44, height: 30)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
-        } else if entry.type == .shell {
-            Image(systemName: "terminal")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
         } else if let content = entry.content, content.count <= 100, let parsed = ColorParser.parse(content) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(Color(red: parsed.red, green: parsed.green, blue: parsed.blue,

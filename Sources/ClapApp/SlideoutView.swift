@@ -36,10 +36,6 @@ public struct SlideoutView<Content: View, Slideout: View>: View {
         self.slideout = slideout
     }
 
-    @State private var dragStartContentWidth: CGFloat?
-    @State private var dragStartSlideoutWidth: CGFloat?
-    @State private var isDraggingDivider = false
-
     private var leftToRight: Bool {
         controller.placement == .right
     }
@@ -47,13 +43,14 @@ public struct SlideoutView<Content: View, Slideout: View>: View {
     @ViewBuilder
     private func resizeDivider() -> some View {
         Divider()
-            .overlay(Color.primary.opacity(AppAlpha.Stroke.hairline))
+            .padding(.vertical, 4)
             .padding(.horizontal, 6)
+            // macOS 26 broke gestures when no background is present; the
+            // near-invisible background is the workaround.
             .background(Color.white.opacity(0.001))
-            .contentShape(Rectangle())
             .onHover { inside in
                 if let window = controller.window {
-                    window.isMovableByWindowBackground = !inside && !isDraggingDivider
+                    window.isMovableByWindowBackground = !inside
                 }
                 if inside {
                     if #available(macOS 15.0, *) {
@@ -61,45 +58,25 @@ public struct SlideoutView<Content: View, Slideout: View>: View {
                     } else {
                         NSCursor.resizeLeftRight.push()
                     }
-                } else if !isDraggingDivider {
+                } else {
                     NSCursor.pop()
                 }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                DragGesture()
                     .onChanged { value in
-                        if dragStartContentWidth == nil {
-                            isDraggingDivider = true
-                            dragStartContentWidth = controller.contentWidth
-                            dragStartSlideoutWidth = controller.slideoutWidth
-                            if let window = controller.window {
-                                window.isMovableByWindowBackground = false
-                            }
+                        if let window = controller.window {
+                            controller.slideoutWidth = min(
+                                max(controller.minimumSlideoutWidth,
+                                    controller.slideoutResizeWidth
+                                        + (leftToRight ? -1 : 1) * value.translation.width),
+                                window.frame.width - controller.minimumContentWidth)
+                            controller.contentWidth = window.frame.width - controller.slideoutWidth
                         }
-                        guard let startContent = dragStartContentWidth,
-                              let startSlideout = dragStartSlideoutWidth else { return }
-
-                        let total = startContent + startSlideout
-                        let delta = (leftToRight ? 1 : -1) * value.translation.width
-                        let rawContent = (startContent + delta).rounded()
-
-                        let minContent = controller.minimumContentWidth
-                        let maxContent = max(minContent, total - controller.minimumSlideoutWidth)
-
-                        let clampedContent = min(maxContent, max(minContent, rawContent)).rounded()
-                        let clampedSlideout = max(controller.minimumSlideoutWidth, total - clampedContent).rounded()
-
-                        controller.contentWidth = clampedContent
-                        controller.slideoutWidth = clampedSlideout
                     }
                     .onEnded { _ in
-                        isDraggingDivider = false
-                        dragStartContentWidth = nil
-                        dragStartSlideoutWidth = nil
-                        NSCursor.pop()
-                        if let window = controller.window {
-                            window.isMovableByWindowBackground = true
-                        }
+                        controller.slideoutWidth = controller.slideoutResizeWidth
+                        controller.contentWidth = controller.contentResizeWidth
                     }
             )
             .disabled(controller.state != .open)
@@ -121,6 +98,7 @@ public struct SlideoutView<Content: View, Slideout: View>: View {
             )
             .frame(width: controller.contentWidth.rounded())
             .fixedSize(horizontal: controller.state.isAnimating, vertical: false)
+            .readWidth(controller, into: \.contentResizeWidth)
 
             // Draggable Divider between list and slideout preview
             resizeDivider()
@@ -142,6 +120,7 @@ public struct SlideoutView<Content: View, Slideout: View>: View {
             }
             .environment(\.layoutDirection, .leftToRight)
             .fixedSize(horizontal: controller.state.isAnimating, vertical: false)
+            .readWidth(controller, into: \.slideoutResizeWidth)
             .frame(
                 minWidth: controller.state != .open ? 0 : nil,
                 maxWidth: controller.state == .closed ? 0 : nil

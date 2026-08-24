@@ -135,6 +135,8 @@ clap search <query> [--type text|image|shell]     # Full-text search
 clap search --regex "^docker.*"                   # Regex search
 clap get <id>                                     # Show entry (pipe-friendly raw output)
 clap copy <id>                                    # Copy entry to pasteboard
+clap add <text> | -                               # Insert an entry (alias: clap in; use - for stdin)
+echo "piped" | clap add -                         # Insert from a pipe
 clap delete <id> | --text <str> | --regex <pat>   # Delete entries (alias: clap out)
 clap pin <id> / clap unpin <id>                   # Pin/unpin entries
 clap clear [--force]                              # Wipe history (preserves pinned)

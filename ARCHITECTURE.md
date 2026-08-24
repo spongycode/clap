@@ -322,6 +322,7 @@ clap list [--images] [--limit N] [--offset N]
 clap search <query> [--regex <pat>] [--type text|image] [--limit N]
 clap get <id>
 clap copy <id>
+clap add <text> | -                insert entry (- reads stdin); alias: clap in
 clap delete <id> | --text <text> | --regex <pat>
 clap out [<id> | <exact text>]     alias of delete
 clap pin <id> / clap unpin <id>

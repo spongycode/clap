@@ -43,14 +43,20 @@ public final class SlideoutController: ObservableObject {
 
     @Published public var contentWidth: CGFloat = 480
     @Published public var slideoutWidth: CGFloat = 360
+
+    // Last RENDERED widths, written continuously by readWidth in
+    // SlideoutView. Divider drag-end resets to these so the settled layout
+    // always matches what is actually on screen.
+    var contentResizeWidth: CGFloat = 0
+    var slideoutResizeWidth: CGFloat = 0
     @Published public var placement: SlideoutPlacement = .right
     @Published public var state: SlideoutState = .closed
 
     public weak var window: NSWindow?
 
     private var windowAnimationOrigin: CGPoint?
-    private var windowAnimationOriginBaseState: SlideoutState = .closed
     private var autoOpenTask: Task<Void, Never>?
+    private var closeIfEmptyTask: Task<Void, Never>?
     public var autoOpenDelayMs: Int = 1000
 
     public init() {}
@@ -75,6 +81,25 @@ public final class SlideoutController: ObservableObject {
         autoOpenTask = nil
     }
 
+    /// Tab switches momentarily clear the selection before the new tab's
+    /// first row is auto-selected. Close only if NO selection arrives within
+    /// the grace period (i.e. the tab is genuinely empty) — otherwise the
+    /// pane stays open and its content updates in place.
+    public func scheduleCloseIfNoSelection(delayMs: Int = 250) {
+        closeIfEmptyTask?.cancel()
+        closeIfEmptyTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
+            guard !Task.isCancelled else { return }
+            guard let self, self.state.isOpen else { return }
+            self.closePreview(animated: true)
+        }
+    }
+
+    public func cancelCloseIfNoSelection() {
+        closeIfEmptyTask?.cancel()
+        closeIfEmptyTask = nil
+    }
+
     public func computePlacement(window: NSWindow, for size: NSSize) -> SlideoutPlacement {
         guard let screen = window.screen?.visibleFrame else { return placement }
         let windowFrame = window.frame
@@ -94,7 +119,6 @@ public final class SlideoutController: ObservableObject {
 
         if animated {
             windowAnimationOrigin = window.frame.origin
-            windowAnimationOriginBaseState = state
 
             withAnimation(.easeInOut(duration: Self.animationDuration)) {
                 state = .opening
@@ -136,7 +160,6 @@ public final class SlideoutController: ObservableObject {
 
         if animated {
             windowAnimationOrigin = window.frame.origin
-            windowAnimationOriginBaseState = state
 
             withAnimation(.easeInOut(duration: Self.animationDuration)) {
                 state = .closing
