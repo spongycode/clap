@@ -75,6 +75,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                 guard let self else { return }
                 let hasEntry = (newID != nil)
                 if hasEntry {
+                    self.appState.slideout.cancelCloseIfNoSelection()
                     if self.appState.slideout.state.isOpen {
                         // Already open: stays open, preview content updates live
                     } else if self.panel.isVisible {
@@ -82,9 +83,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                     }
                 } else {
                     self.appState.slideout.cancelAutoOpen()
-                    if self.appState.slideout.state.isOpen {
-                        self.appState.slideout.closePreview(animated: self.panel.isVisible)
-                    }
+                    self.appState.slideout.scheduleCloseIfNoSelection()
                 }
             }
 
