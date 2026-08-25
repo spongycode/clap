@@ -9,8 +9,8 @@ if [[ ! "$BUMP" =~ ^(major|minor|patch|none)$ ]]; then
     exit 2
 fi
 
-CLI_FILE="Sources/ClapCLIKit/ClapCLI.swift"
-CURRENT="$(sed -n 's/^    public static let version = "\([0-9]*\.[0-9]*\.[0-9]*\)"/\1/p' "$CLI_FILE")"
+CLI_FILE="Sources/ClapCore/ClapVersion.swift"
+CURRENT="$(sed -n 's/^    public static let current = "\([0-9]*\.[0-9]*\.[0-9]*\)"/\1/p' "$CLI_FILE")"
 if [[ -z "$CURRENT" ]]; then
     echo "error: could not read current version from $CLI_FILE" >&2
     exit 1
@@ -35,8 +35,5 @@ substitute_inplace() {
     sed "$pattern" "$file" > "$file.tmp" && mv "$file.tmp" "$file"
 }
 
-substitute_inplace "s/public static let version = \"$CURRENT\"/public static let version = \"$NEW\"/" "$CLI_FILE"
-substitute_inplace "s/clipboard & shell history manager · v$CURRENT/clipboard & shell history manager · v$NEW/" \
-    Sources/ClapApp/SettingsView.swift
-substitute_inplace "s/<string>$CURRENT<\/string>/<string>$NEW<\/string>/" Scripts/Info.plist
+substitute_inplace "s/public static let current = \"$CURRENT\"/public static let current = \"$NEW\"/" "$CLI_FILE"
 echo "$NEW"

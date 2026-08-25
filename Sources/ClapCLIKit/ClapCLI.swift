@@ -1,4 +1,5 @@
 import Foundation
+import ClapCore
 
 /// clap — clipboard manager CLI dispatcher.
 ///
@@ -6,7 +7,7 @@ import Foundation
 /// Global flags (`--data-dir <path>`) are accepted anywhere on the line and
 /// extracted before command dispatch.
 public enum ClapCLI {
-    public static let version = "0.2.0"
+    public static var version: String { ClapVersion.current }
 
     /// Command dispatch table. Hidden/scripting commands are marked in help
     /// comments only.
