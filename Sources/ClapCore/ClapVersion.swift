@@ -6,5 +6,5 @@
 ///   CFBundleShortVersionString at packaging time.
 /// - `Scripts/bump_version.sh` updates ONLY this file.
 public enum ClapVersion {
-    public static let current = "0.2.0"
+    public static let current = "0.2.1"
 }
