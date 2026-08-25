@@ -1,21 +1,67 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Version bump'
+        type: choice
+        required: true
+        default: 'patch'
+        options:
+          - major
+          - minor
+          - patch
+          - none
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    # macOS 26 SDK is required to compile NSGlassEffectView (Liquid Glass).
+  release:
+    name: Bump, build & publish
     runs-on: macos-26
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Configure git (github-actions bot)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Compute new version
+        id: version
+        run: |
+          chmod +x Scripts/bump_version.sh
+          NEW_VERSION="$(Scripts/bump_version.sh "${{ inputs.bump_type }}")"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$NEW_VERSION (bump: ${{ inputs.bump_type }})"
+
+      - name: Guard — tag must not already exist
+        run: |
+          if git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::error::Tag ${{ steps.version.outputs.tag }} already exists."
+            exit 1
+          fi
+
+      - name: Commit version bump
+        run: |
+          git add Sources/ClapCore/ClapVersion.swift
+          if git diff --cached --quiet; then
+            if [ "${{ inputs.bump_type }}" != "none" ]; then
+              echo "::error::Version bump changed nothing — unexpected."
+              exit 1
+            fi
+            echo "No version change for bump type 'none'."
+          else
+            git commit -m "Bump version to ${{ steps.version.outputs.tag }}"
+          fi
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -29,21 +75,37 @@ jobs:
         run: |
           chmod +x Scripts/make_app.sh
           ./Scripts/make_app.sh dist
-          
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
+
+          TAG_NAME="${{ steps.version.outputs.tag }}"
           ZIP_NAME="clap-${TAG_NAME}.zip"
-          
+
           cd dist
           zip -r -y "../${ZIP_NAME}" clap.app
           cd ..
           shasum -a 256 "${ZIP_NAME}" > "${ZIP_NAME}.sha256"
 
+      - name: Push commit and tag (only after a successful build)
+        run: |
+          git push origin "HEAD:${{ github.ref_name }}"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: |
             clap-*.zip
             clap-*.zip.sha256
           draft: false
           prerelease: false
           generate_release_notes: true
+
+      - name: Summary
+        run: |
+          {
+            echo "## Release published 🚀"
+            echo "- Tag: \`${{ steps.version.outputs.tag }}\`"
+            echo "- Bump: \`${{ inputs.bump_type }}\`"
+            echo "- Assets: zip + sha256 attached to the GitHub Release."
+          } >> "$GITHUB_STEP_SUMMARY"

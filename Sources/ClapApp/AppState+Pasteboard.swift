@@ -86,7 +86,7 @@ extension AppState {
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
             await self.perform("Capture transformed text") {
-                try await self.store.captureText(text, sourceApp: "clap")
+                try await self.store.captureText(text, sourceApp: ClapIdentity.bundleID)
             }
             IPC.post(.storeChanged)
             self.reload()

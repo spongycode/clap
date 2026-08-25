@@ -445,7 +445,17 @@ struct PreviewView: View {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             return bundleID
         }
-        return FileManager.default.displayName(atPath: url.path)
+        // Prefer the bundle's localized display name; the on-disk name
+        // carries a ".app" suffix nobody wants in the UI.
+        if let bundle = Bundle(url: url) {
+            if let displayName = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String {
+                return displayName
+            }
+            if let name = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String {
+                return name
+            }
+        }
+        return url.deletingPathExtension().lastPathComponent
     }
 }
 

@@ -16,7 +16,14 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/ClapApp" "$APP/Contents/MacOS/ClapApp"
 cp "$BIN/clap" "$APP/Contents/MacOS/clap"
-cp "$ROOT/Scripts/Info.plist" "$APP/Contents/Info.plist"
+APP_VERSION="$(sed -n 's/^    public static let current = "\([0-9.]*\)"/\1/p' \
+    "$ROOT/Sources/ClapCore/ClapVersion.swift")"
+if [ -z "$APP_VERSION" ]; then
+    echo "error: could not read version from ClapVersion.swift" >&2
+    exit 1
+fi
+sed "s|<string>0\.0\.0-PLACEHOLDER</string>|<string>$APP_VERSION</string>|" \
+    "$ROOT/Scripts/Info.plist" > "$APP/Contents/Info.plist"
 if [ -d "$ROOT/Resources" ]; then
     cp -R "$ROOT/Resources/"* "$APP/Contents/Resources/" 2>/dev/null || true
 fi
