@@ -26,6 +26,12 @@ extension AppState {
     /// Returns false when an image copy failed (panel stays open so the user
     /// sees that nothing happened).
     private func writeToPasteboard(_ entry: ClipboardEntry) async -> Bool {
+        let succeeded = await writeToPasteboardInner(entry)
+        if succeeded { CopyFeedback.play() }
+        return succeeded
+    }
+
+    private func writeToPasteboardInner(_ entry: ClipboardEntry) async -> Bool {
         let pasteboard = NSPasteboard.general
         switch entry.type {
         case .text:
@@ -108,6 +114,18 @@ extension AppState {
         }.value
         if let image { thumbnailCache.setObject(image, forKey: key) }
         return image
+    }
+
+    /// Copies generated image data (e.g. a QR PNG) to the pasteboard. No
+    /// monitor coordination: the pasteboard monitor captures it as a new
+    /// image entry, mirroring copyTransformedText's behavior for text.
+    func copyGeneratedImage(_ data: Data) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if pasteboard.setData(data, forType: .png) {
+            CopyFeedback.play()
+        }
+        IPC.post(.storeChanged)
     }
 
     /// Loads the full-resolution image for preview rendering (not cached).

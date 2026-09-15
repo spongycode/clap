@@ -11,8 +11,8 @@ this file.
   dedup, LRU eviction, settings, image file store, stats, doctor checks, OCR
   text extraction, and shared text analysis (color/case/Base64/URL/JWT/epoch).
   **No AppKit/SwiftUI imports** (Foundation + CoreGraphics/ImageIO +
-  UniformTypeIdentifiers + CryptoKit + Vision allowed — Vision powers the
-  injectable `OCREngine`).
+  UniformTypeIdentifiers + CryptoKit + CoreImage + Vision allowed — Vision
+  powers the injectable `OCREngine`, CoreImage the QR generator).
 - `ClapApp` (executable): NSApplication accessory app. Pasteboard monitor,
   Carbon global hotkey (configurable), SwiftUI floating panel (Classic/Media/
   Shell/Favs tabs), menu bar item, settings window.
@@ -350,8 +350,9 @@ byte-size eviction, pinned immunity, clear, search (terms, phrase, type
 filter), regex search incl. invalid pattern error, ByteSize parse/format,
 SearchQuery.parse, retention, OCR seam (mocked engine stores searchable text),
 injected-clock determinism, text analysis (color/case/transform/JWT/epoch),
-TextSummaries, ImageFormats, CLI ArgParser/OutputFormatter, and the app's
-AppState logic (hover-selection gate, tab→query mapping).
+TextSummaries, ImageFormats, QR generation, JSON detection, color format
+rendering, backup export/restore round-trip, CLI ArgParser/OutputFormatter,
+and the app's AppState logic (hover-selection gate, tab→query mapping).
 
 CI (`.github/workflows/ci.yml`) enforces three gates on every push:
 `swift build -Xswiftc -warnings-as-errors`, full `swift test`, and a zero-

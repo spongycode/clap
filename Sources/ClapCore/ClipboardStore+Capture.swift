@@ -155,7 +155,8 @@ extension ClipboardStore {
     /// Returns nil when the text is empty after normalization or oversize.
     @discardableResult
     public func importText(_ raw: String, createdAt: Date, lastUsedAt: Date,
-                           useCount: Int, pinned: Bool, sourceApp: String?) async throws -> (id: Int64, merged: Bool)? {
+                           useCount: Int, pinned: Bool, sourceApp: String?,
+                           as type: EntryType = .text) async throws -> (id: Int64, merged: Bool)? {
         let normalized = TextNormalizer.normalize(raw)
         guard !normalized.isEmpty else { return nil }
         let sizeBytes = Int64(normalized.utf8.count)
@@ -163,13 +164,13 @@ extension ClipboardStore {
         let hash = ContentHasher.textHash(normalized)
 
         return try db.transaction {
-            if let existing = try firstEntry("type = 'text' AND content_hash = ? AND content = ?",
-                                             [.text(hash), .text(normalized)]) {
+            if let existing = try firstEntry("type = ? AND content_hash = ? AND content = ?",
+                                             [.text(EntryType.text.rawValue), .text(hash), .text(normalized)]) {
                 try mergeImported(into: existing.id, createdAt: createdAt,
                                   lastUsedAt: lastUsedAt, useCount: useCount, pinned: pinned)
                 return (existing.id, true)
             }
-            let id = try insertEntry(type: .text, content: normalized, imagePath: nil, imageFormat: nil,
+            let id = try insertEntry(type: type, content: normalized, imagePath: nil, imageFormat: nil,
                                      hash: hash, createdAt: createdAt.timeIntervalSince1970,
                                      lastUsedAt: lastUsedAt.timeIntervalSince1970,
                                      sizeBytes: sizeBytes, pinned: pinned, useCount: useCount,

@@ -131,22 +131,36 @@ private struct ParsedEntryContent {
     var urlDecoded: String?
     var jwt: JWTData?
     var epoch: EpochData?
+    var json: JSONData?
+    /// Set when strict parse failed but JSONRepair recovered the document.
+    var jsonRepair: JSONRepairResult?
 
     var hasCards: Bool {
-        color != nil || base64Decoded != nil || urlDecoded != nil || jwt != nil || epoch != nil
+        color != nil || base64Decoded != nil || urlDecoded != nil || jwt != nil
+            || epoch != nil || json != nil || jsonRepair != nil
     }
 
     static let empty = ParsedEntryContent()
 
     static func parse(_ content: String?) -> ParsedEntryContent {
         guard let content, !content.isEmpty, content.count <= 20_000 else { return .empty }
-        return ParsedEntryContent(
+        var result = ParsedEntryContent(
             color: ColorParser.parse(content),
             base64Decoded: TextTransformer.decodeBase64(content),
             urlDecoded: TextTransformer.decodeURL(content),
             jwt: JWTData.parse(content),
-            epoch: EpochData.parse(content)
+            epoch: EpochData.parse(content),
+            json: JSONData.parse(content)
         )
+        if result.json == nil {
+            result.jsonRepair = JSONRepair.repair(content)
+        } else if let repair = JSONRepair.repair(content), repair.repaired != content {
+            // Newer macOS JSONSerialization accepts JSON5-ish input (trailing
+            // commas etc.). Parse success alone doesn't mean strict JSON —
+            // prefer the repaired card so sloppiness is still surfaced.
+            result.jsonRepair = repair
+        }
+        return result
     }
 }
 
@@ -156,6 +170,7 @@ struct PreviewView: View {
 
     @State private var image: NSImage?
     @State private var parsed: ParsedEntryContent = .empty
+    @State private var qrVisible = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -166,6 +181,7 @@ struct PreviewView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: entry.id) {
+            qrVisible = false
             parsed = await Task.detached(priority: .userInitiated) {
                 ParsedEntryContent.parse(entry.content)
             }.value
@@ -181,7 +197,9 @@ struct PreviewView: View {
     private var contentSection: some View {
         if entry.type == .text || entry.type == .shell {
             VStack(alignment: .leading, spacing: 0) {
-                if parsed.hasCards {
+                // QR is user-requested (toggle), not content-detected — so it
+                // must render even when no smart cards were detected.
+                if parsed.hasCards || qrVisible {
                     VStack(alignment: .leading, spacing: 10) {
                         if let color = parsed.color {
                             ColorCardView(color: color, source: entry.content ?? "")
@@ -203,6 +221,23 @@ struct PreviewView: View {
                         }
                         if let epoch = parsed.epoch {
                             EpochCardView(epoch: epoch) { text in state.copyTransformedText(text) }
+                        }
+                        if qrVisible, let content = entry.content,
+                           QRCodeBuilder.canEncode(content) {
+                            QRCardView(content: content) { png in
+                                state.copyGeneratedImage(png)
+                            }
+                        }
+                        if let repair = parsed.jsonRepair,
+                           let repaired = JSONData.parse(repair.repaired) {
+                            JSONCardView(json: repaired,
+                                         repairedFixes: repair.fixes) { text in
+                                state.copyTransformedText(text)
+                            }
+                        } else if let json = parsed.json {
+                            JSONCardView(json: json) { text in
+                                state.copyTransformedText(text)
+                            }
                         }
                     }
                     .padding(.horizontal, 14)
@@ -229,9 +264,10 @@ struct PreviewView: View {
                 }
             }
         } else {
-            ImageContentView(entry: entry, image: image) { text in
-                state.copyTransformedText(text)
-            }
+            ImageContentView(entry: entry, image: image,
+                             showsQR: qrVisible,
+                             onCopyImage: { state.copyGeneratedImage($0) },
+                             onCopyText: { state.copyTransformedText($0) })
         }
     }
 
@@ -284,6 +320,14 @@ struct PreviewView: View {
                         }
                         .help("Copy Base64- or URL-encoded / decoded text")
                         .accessibilityLabel("Copy encoded or decoded text")
+                    }
+
+                    if let qrContent = entry.content, QRCodeBuilder.canEncode(qrContent) {
+                        IconActionButton(systemImage: "qrcode",
+                                         help: qrVisible ? "Hide QR code" : "Show QR code",
+                                         isSelected: qrVisible) {
+                            qrVisible.toggle()
+                        }
                     }
 
                     if entry.type == .text || entry.type == .shell {
@@ -459,376 +503,13 @@ struct PreviewView: View {
     }
 }
 
-// MARK: - Feature cards
-
-private struct ColorCardView: View {
-    let color: ParsedColor
-    let source: String
-
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(red: color.red, green: color.green, blue: color.blue,
-                            opacity: color.alpha))
-                .frame(width: 46, height: 46)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Color Preview")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Text(source.trimmingCharacters(in: .whitespacesAndNewlines))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(AppAlpha.Fill.subtle))
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Color preview: \(source)")
-    }
-}
-
-private struct DecodedCardView: View {
-    let icon: String
-    let tint: Color
-    let title: String
-    let decoded: String
-    let onCopy: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(tint)
-                .frame(width: 22, height: 22)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Button(action: onCopy) {
-                        Label("Copy Decoded", systemImage: "doc.on.doc")
-                            .font(.system(size: 10))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                }
-                Text(decoded)
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .lineLimit(3)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(tint.opacity(0.06))
-        )
-    }
-}
-
-private struct JWTCardView: View {
-    @EnvironmentObject private var state: AppState
-    let jwt: JWTData
-    let onCopy: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "key.horizontal.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.indigo)
-                Text("JWT Inspector")
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundStyle(.primary)
-
-                Text(jwt.algorithm)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(Color.primary.opacity(0.08))
-                    )
-
-                if let isExp = jwt.isExpired {
-                    HStack(spacing: 3) {
-                        Circle()
-                            .fill(isExp ? Color.red : Color.green)
-                            .frame(width: 6, height: 6)
-                        Text(isExp ? "Expired" : "Valid")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(isExp ? .red : .green)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill((isExp ? Color.red : Color.green).opacity(0.12))
-                    )
-                }
-
-                Spacer()
-
-                Menu {
-                    Button("Copy Payload JSON") { onCopy(jwt.payloadJSON) }
-                    Button("Copy Header JSON") { onCopy(jwt.headerJSON) }
-                } label: {
-                    Label("Copy JSON", systemImage: "doc.on.doc")
-                        .font(.system(size: 10))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-            }
-
-            if jwt.subject != nil || jwt.issuer != nil || jwt.expirationDate != nil {
-                VStack(alignment: .leading, spacing: 3) {
-                    if let sub = jwt.subject {
-                        claimRow(label: "Subject:", value: sub, monospaced: true)
-                    }
-                    if let iss = jwt.issuer {
-                        claimRow(label: "Issuer:", value: iss, monospaced: true)
-                    }
-                    if let expDate = jwt.expirationDate {
-                        HStack(spacing: 6) {
-                            Text("Expires:")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Text(Self.dateFormatter.string(from: expDate))
-                                .font(.system(size: 11))
-                        }
-                    }
-                }
-            }
-
-            Divider()
-
-            Text("Decoded Payload:")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.secondary)
-
-            Text(jwt.payloadJSON)
-                .font(.system(size: 11, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(AppAlpha.Fill.subtle))
-                )
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.indigo.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.indigo.opacity(0.18), lineWidth: 1)
-                )
-        )
-    }
-
-    private func claimRow(label: String, value: String, monospaced: Bool) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 11, design: monospaced ? .monospaced : .default))
-                .lineLimit(1)
-        }
-    }
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
-}
-
-private struct EpochCardView: View {
-    @EnvironmentObject private var state: AppState
-    let epoch: EpochData
-    let onCopy: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "clock.badge.checkmark.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.orange)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Epoch Timestamp")
-                        .font(.system(size: 12.5, weight: .bold))
-                        .foregroundStyle(.primary)
-
-                    Text(epoch.unitDescription)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .lineLimit(1)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .fill(Color.orange.opacity(0.12))
-                        )
-                }
-
-                Spacer()
-
-                Menu {
-                    Button("Copy ISO 8601 (\(epoch.iso8601))") { onCopy(epoch.iso8601) }
-                    Button("Copy Local Date") { onCopy(epoch.localFormatted) }
-                    if epoch.unitDescription.contains("Seconds") {
-                        Button("Copy as Milliseconds (\(epoch.unixMillis))") {
-                            onCopy(String(epoch.unixMillis))
-                        }
-                    } else {
-                        Button("Copy as Seconds (\(epoch.unixSeconds))") {
-                            onCopy(String(epoch.unixSeconds))
-                        }
-                    }
-                } label: {
-                    Label("Copy Date", systemImage: "doc.on.doc")
-                        .font(.system(size: 10))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(epoch.localFormatted)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-
-                HStack(spacing: 5) {
-                    Text("UTC:")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text(epoch.iso8601)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-
-                HStack(spacing: 5) {
-                    Text("Relative:")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text(epoch.relativeFormatted)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(AppAlpha.Fill.subtle))
-            )
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.orange.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
-                )
-        )
-    }
-}
-
-private struct ImageContentView: View {
-    let entry: ClipboardEntry
-    let image: NSImage?
-    let onCopyText: (String) -> Void
-
-    var body: some View {
-        ScrollView([.vertical]) {
-            VStack(spacing: 12) {
-                ZStack {
-                    if let image {
-                        Image(nsImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(AppAlpha.Stroke.panelBorder), lineWidth: 0.5)
-                            )
-                    } else {
-                        ProgressView()
-                            .frame(height: 140)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .accessibilityLabel("Image preview, \(entry.imageFormat?.uppercased() ?? "unknown format")")
-                .padding(.top, 4)
-
-                if let ocrText = entry.content, !ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Label("Extracted Text (OCR)", systemImage: "doc.text.viewfinder")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Button { onCopyText(ocrText) } label: {
-                                Label("Copy Text", systemImage: "doc.on.doc")
-                                    .font(.system(size: 10))
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                        }
-
-                        Text(ocrText)
-                            .font(.system(size: 11.5, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(Color.primary.opacity(AppAlpha.Fill.subtle))
-                            )
-                    }
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.primary.opacity(0.03))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
-                            )
-                    )
-                }
-            }
-            .padding(14)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 // MARK: - Actions-row icon buttons
 
 /// Circular hover-highlighting icon button used across the Actions row.
 private struct IconActionButton: View {
     let systemImage: String
     let help: String
+    var isSelected: Bool = false
     let action: () -> Void
 
     @State private var isHovered = false
@@ -838,11 +519,13 @@ private struct IconActionButton: View {
             Image(systemName: systemImage)
                 .font(.system(size: 12))
                 .symbolRenderingMode(.monochrome)
-                .foregroundStyle(isHovered ? Color.primary : Color.secondary)
+                .foregroundStyle(isSelected || isHovered ? Color.primary : Color.secondary)
                 .frame(width: 26, height: 26)
                 .background(
                     Circle()
-                        .fill(isHovered ? Color.primary.opacity(AppAlpha.Hover.fill) : Color.clear)
+                        .fill(isSelected || isHovered
+                              ? Color.primary.opacity(AppAlpha.Hover.fill)
+                              : Color.clear)
                 )
                 .contentShape(Circle())
         }
@@ -850,6 +533,7 @@ private struct IconActionButton: View {
         .onHover { isHovered = $0 }
         .help(help)
         .accessibilityLabel(help)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

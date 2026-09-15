@@ -87,3 +87,56 @@ extension SettingsView {
         }
     }
 }
+
+// MARK: - Backup / restore
+
+extension SettingsView {
+
+    @ViewBuilder
+    var backupSection: some View {
+        HStack(spacing: 8) {
+            Button("Export Backup…") { runBackupExport() }
+                .help("Export full history (backup.json + images) to a folder")
+            Button("Restore Backup…") { runBackupRestore() }
+                .help("Import a backup folder created by clap; duplicates merge")
+        }
+        if let backupStatus {
+            Text(backupStatus)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func runBackupExport() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "clap-backup"
+        panel.message = "Choose an empty folder for the backup (backup.json + images/)"
+        panel.canCreateDirectories = true
+        guard let directory = panel.runModal() == .OK ? panel.url : nil else { return }
+        Task {
+            do {
+                let count = try await store.exportBackup(to: directory)
+                backupStatus = "Exported \(count) entries."
+            } catch {
+                backupStatus = "Export failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func runBackupRestore() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.message = "Choose a clap backup folder (must contain backup.json)"
+        guard let directory = panel.runModal() == .OK ? panel.url : nil else { return }
+        Task {
+            do {
+                let result = try await store.importBackup(from: directory)
+                backupStatus = "Restored \(result.imported) entries (\(result.merged) merged, \(result.skipped) skipped)."
+                IPC.post(.storeChanged)
+            } catch {
+                backupStatus = "Restore failed: \(error.localizedDescription)"
+            }
+        }
+    }
+}
