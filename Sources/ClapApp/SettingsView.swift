@@ -49,6 +49,7 @@ struct SettingsView: View {
     @State private var suppressLoginToggle = false
     @State private var launchError: String?
     @State var saveError: String?
+    @State var backupStatus: String?
     @State var hotKeyOK = true
     @State var snippetTapOK = true
     @State private var paused = false
@@ -213,6 +214,7 @@ struct SettingsView: View {
             Section("Retention") { retentionPicker }
             Section("General") { generalSection }
             Section("Excluded apps") { exclusionsSection }
+            Section("Backup & restore") { backupSection }
         }
     }
 

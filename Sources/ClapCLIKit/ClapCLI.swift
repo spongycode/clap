@@ -24,6 +24,8 @@ public enum ClapCLI {
         "unpin": { await PinCommand.run($0, pinned: false, context: $1) },
         "tag": { await TagCommand.run($0, context: $1) },
         "tags": { await TagCommand.run(["list"] + $0, context: $1) },
+        "backup": { await BackupCommand.run($0, mode: .backup, context: $1) },
+        "restore": { await BackupCommand.run($0, mode: .restore, context: $1) },
         "clear": { await ClearCommand.run($0, context: $1) },
         "stats": { await StatsCommand.run($0, context: $1) },
         "config": { await ConfigCommand.run($0, context: $1) },
@@ -108,6 +110,7 @@ enum HelpText {
       clap pin <id> / clap unpin <id>
       clap tag add <id> <tag> / clap tag remove <id> <tag>
       clap tags / clap tag list [id]
+      clap backup <dir> / clap restore <dir>            Full-history backup & restore
       clap clear [--force]
       clap stats [--json]
       clap config get [key]

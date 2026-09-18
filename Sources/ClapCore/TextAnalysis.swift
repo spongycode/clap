@@ -16,6 +16,61 @@ public struct ParsedColor: Equatable, Sendable {
         self.blue = blue
         self.alpha = alpha
     }
+
+    public struct Formats: Equatable, Sendable {
+        public let hex: String
+        public let rgb: String
+        public let hsl: String
+    }
+
+    /// The same color rendered in the three formats designers pass around:
+    /// `#RRGGBB[AA]`, `rgb[r](r, g, b[, a])`, `hsl[hsla](h, s%, l%[, a])`.
+    public var formats: Formats {
+        let to255 = { (v: Double) in Int((v * 255).rounded()) }
+        let r = to255(red), g = to255(green), b = to255(blue)
+
+        var hex = String(format: "#%02X%02X%02X", r, g, b)
+        if alpha < 1.0 {
+            hex += String(format: "%02X", Int((alpha * 255).rounded()))
+        }
+
+        let rgb: String
+        if alpha < 1.0 {
+            rgb = String(format: "rgba(%d, %d, %d, %.2f)", r, g, b, alpha)
+        } else {
+            rgb = String(format: "rgb(%d, %d, %d)", r, g, b)
+        }
+
+        // RGB -> HSL (standard Foley/van-Dam inverse).
+        let maxC = max(red, green, blue)
+        let minC = min(red, green, blue)
+        let delta = maxC - minC
+        let lightness = (maxC + minC) / 2
+        var hue: Double
+        let saturation: Double
+        if delta == 0 {
+            hue = 0
+            saturation = 0
+        } else {
+            saturation = delta / (1 - abs(2 * lightness - 1))
+            switch maxC {
+            case red: hue = ((green - blue) / delta).truncatingRemainder(dividingBy: 6)
+            case green: hue = (blue - red) / delta + 2
+            default: hue = (red - green) / delta + 4
+            }
+            hue = (hue * 60).truncatingRemainder(dividingBy: 360)
+            if hue < 0 { hue += 360 }
+        }
+
+        let hsl: String
+        if alpha < 1.0 {
+            hsl = String(format: "hsla(%.0f, %.0f%%, %.0f%%, %.2f)", hue, saturation * 100, lightness * 100, alpha)
+        } else {
+            hsl = String(format: "hsl(%.0f, %.0f%%, %.0f%%)", hue, saturation * 100, lightness * 100)
+        }
+
+        return Formats(hex: hex, rgb: rgb, hsl: hsl)
+    }
 }
 
 public enum ColorParser {
@@ -422,5 +477,61 @@ public struct EpochData: Sendable, Equatable {
             unixSeconds: Int64(date.timeIntervalSince1970),
             unixMillis: Int64(date.timeIntervalSince1970 * 1000)
         )
+    }
+}
+
+// MARK: - JSON detection & reformatting
+
+/// Validated JSON extracted from clipboard content, with the two renderings
+/// developers actually copy: pretty (sorted keys) and minified.
+public struct JSONData: Sendable, Equatable {
+    public static let maxParseLength = 100_000
+
+    public let pretty: String
+    public let minified: String
+    public let isTopLevelObject: Bool
+    public let valueCount: Int
+
+    /// Parses `text` as JSON. Accepts objects and arrays only (scalars like
+    /// `42` or `"hi"` are not interesting clipboard JSON). Returns nil for
+    /// anything invalid or oversized.
+    public static func parse(_ text: String?) -> JSONData? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, trimmed.count <= maxParseLength else { return nil }
+        guard trimmed.hasPrefix("{") || trimmed.hasPrefix("[") else { return nil }
+
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data, options: []),
+              JSONSerialization.isValidJSONObject(object) else {
+            return nil
+        }
+
+        let prettyData = (try? JSONSerialization.data(
+            withJSONObject: object, options: [.prettyPrinted, .sortedKeys])) ?? data
+        // sortedKeys on both renderings: deterministic output for tests,
+        // diffs and caches.
+        let minifiedData = (try? JSONSerialization.data(
+            withJSONObject: object, options: [.sortedKeys])) ?? data
+
+        guard let pretty = String(data: prettyData, encoding: .utf8),
+              let minified = String(data: minifiedData, encoding: .utf8) else {
+            return nil
+        }
+
+        let valueCount: Int
+        if let array = object as? [Any] {
+            valueCount = array.count
+        } else if let dict = object as? [String: Any] {
+            valueCount = dict.count
+        } else {
+            valueCount = 0
+        }
+
+        return JSONData(
+            pretty: pretty,
+            minified: minified,
+            isTopLevelObject: object is [String: Any],
+            valueCount: valueCount)
     }
 }

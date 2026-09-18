@@ -154,3 +154,71 @@ struct TextAnalysisTests {
         #expect(ImageFormats.uti(forFormat: "bogus") == nil)
     }
 }
+
+@Suite("ParsedColor formats")
+struct ColorFormatTests {
+
+    @Test func primaryColorsRenderInAllFormats() throws {
+        let red = try #require(ColorParser.parse("#f00")).formats
+        #expect(red.hex == "#FF0000")
+        #expect(red.rgb == "rgb(255, 0, 0)")
+        #expect(red.hsl == "hsl(0, 100%, 50%)")
+
+        let green = try #require(ColorParser.parse("hsl(120, 100%, 50%)")).formats
+        #expect(green.hex == "#00FF00")
+        #expect(green.hsl == "hsl(120, 100%, 50%)")
+
+        let white = try #require(ColorParser.parse("rgb(255,255,255)")).formats
+        #expect(white.hex == "#FFFFFF")
+        #expect(white.hsl == "hsl(0, 0%, 100%)")
+    }
+
+    @Test func alphaIsPreservedInFormats() throws {
+        let translucent = try #require(ColorParser.parse("#FF000080")).formats
+        #expect(translucent.hex == "#FF000080")
+        #expect(translucent.rgb == "rgba(255, 0, 0, 0.50)")
+        #expect(translucent.hsl.hasPrefix("hsla(0, 100%, 50%, 0.50)"))
+    }
+
+    @Test func hslRoundTripMatchesInput() throws {
+        // Parse an HSL string, re-render it — must be identical.
+        let source = "hsl(210, 80%, 40%)"
+        let parsed = try #require(ColorParser.parse(source))
+        #expect(parsed.formats.hsl == source)
+    }
+}
+
+@Suite("JSON smart card")
+struct JSONDataTests {
+
+    @Test func parsesObjectAndArray() throws {
+        let object = try #require(JSONData.parse(#"{"b":1,"a":2}"#))
+        #expect(object.isTopLevelObject)
+        #expect(object.valueCount == 2)
+        #expect(object.pretty.contains("\"a\""))
+        // sortedKeys: "a" renders before "b"
+        let aRange = try #require(object.pretty.range(of: "\"a\""))
+        let bRange = try #require(object.pretty.range(of: "\"b\""))
+        #expect(aRange.lowerBound < bRange.lowerBound)
+        #expect(object.minified == #"{"a":2,"b":1}"#)
+
+        let array = try #require(JSONData.parse("[1, 2, 3]"))
+        #expect(!array.isTopLevelObject)
+        #expect(array.valueCount == 3)
+    }
+
+    @Test func rejectsNonJSONAndScalars() {
+        #expect(JSONData.parse("hello") == nil)
+        #expect(JSONData.parse("{\"broken\": }") == nil)
+        #expect(JSONData.parse("42") == nil)              // bare scalar
+        #expect(JSONData.parse("\"just a string\"") == nil)
+        #expect(JSONData.parse(nil) == nil)
+        #expect(JSONData.parse(String(repeating: "{", count: 60_000)) == nil)
+    }
+
+    @Test func doesNotClaimJWTEpochOrColorStrings() {
+        #expect(JSONData.parse("1700000000") == nil)
+        #expect(JSONData.parse("#FF0000") == nil)
+        #expect(JSONData.parse("eyJhbGciOiJub25lIn0.eyJhIjoxfQ.x") == nil)
+    }
+}

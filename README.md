@@ -24,7 +24,7 @@
 - **Screenshot OCR & Search** — Apple Vision extracts text from screenshots in the background; search inside images (`⌘F`) or copy text with one click.
 - **Global Snippet Expansion** — Assign trigger abbreviations (e.g. `;email`, `!zoom`, `brb`) to saved snippets to auto-expand them anywhere as you type.
 - **Permanent Favorites & Snippets** — Bookmark canned replies, email signatures, code snippets, and commands (`⌘S` / `⌘3`).
-- **Developer Smart Cards** — Automatic previews and one-click actions for Base64, URL encoding, JWT tokens, and Unix timestamps.
+- **Developer Smart Cards** — Automatic previews and one-click actions for Base64, URL encoding, JWT tokens, Unix timestamps, **JSON** (pretty/minify), **QR codes** (scan-to-phone), and **color formats** (HEX/RGB/HSL).
 - **Text Case & Encoding Transforms** — Convert text on the fly (`camelCase`, `snake_case`, Base64, URL encode/decode).
 - **Smart Color Swatch Detection** — Recognizes `#hex`, `rgb()`, `rgba()`, `hsl()` color codes with live inline circle swatches.
 - **Search Match Highlighting** — High-contrast match highlighting across list items and preview pane for terms, phrases, and regex.
@@ -139,6 +139,7 @@ clap add <text> | -                               # Insert an entry (alias: clap
 echo "piped" | clap add -                         # Insert from a pipe
 clap delete <id> | --text <str> | --regex <pat>   # Delete entries (alias: clap out)
 clap pin <id> / clap unpin <id>                   # Pin/unpin entries
+clap backup <dir> / clap restore <dir>            # Full-history backup & restore
 clap clear [--force]                              # Wipe history (preserves pinned)
 clap stats [--json]                               # Storage and activity metrics
 clap config get [key] / set <key> <val>           # Manage limits, retention, exclusions
