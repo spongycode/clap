@@ -64,7 +64,17 @@ Run in your terminal:
 curl -fsSL https://raw.githubusercontent.com/spongycode/clap/main/install.sh | bash
 ```
 
-This compiles release binaries, places `clap.app` in `/Applications/`, symlinks the `clap` CLI into your `$PATH`, and launches the app.
+This downloads the latest release, verifies its checksum and code signature, installs `clap.app` into `/Applications` (or `~/Applications`), links the `clap` CLI onto your `$PATH`, and launches the app. It never uses `sudo`, and falls back to building from source when no compatible release exists.
+
+Options (pass after `bash -s --`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/spongycode/clap/main/install.sh | bash -s -- --version v0.4.0   # pin a release
+curl -fsSL https://raw.githubusercontent.com/spongycode/clap/main/install.sh | bash -s -- --source           # build from source
+curl -fsSL https://raw.githubusercontent.com/spongycode/clap/main/install.sh | bash -s -- --uninstall        # remove (keeps history)
+```
+
+Also available: `--app-dir`, `--bin-dir`, `--no-launch`, `--purge` (with `--uninstall`, deletes history). Run with `--help` for details.
 
 ---
 
@@ -114,6 +124,7 @@ Press **⌘⇧V** to open the panel (configurable in Settings to `⌘⇧B`, `⌘
 | **Single Click** | Copy entry, close panel, and paste directly into active app |
 | **↑ / ↓** | Navigate entries |
 | **Enter** | Copy selected entry, close, and paste into active app |
+| **⌘ Enter** | On an image, paste its extracted (OCR) text instead of the image |
 | **⌘1 / ⌘2 / ⌘3 / ⌘4** | Switch tabs: **Classic (⌘1)** · **Shell (⌘2)** · **Favs (⌘3)** · **Media (⌘4)** |
 | **⌘S** or **⌘B** | Toggle Favorite / Bookmark on selected entry (marked with ❤️) |
 | **⌘P** | Pin / unpin selected entry (pinned items stick to top of Classic view) |

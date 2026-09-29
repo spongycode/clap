@@ -348,7 +348,8 @@ pgrep ClapApp), print hint to start the app.
   trigger and pastes the expansion.
 - UI lists are paged: fetch 100 rows, fetch more as selection/scroll nears the
   end.
-- Keys: ↑/↓ navigate, Enter copy+close(+paste), Esc close, ⌘F focus search,
+- Keys: ↑/↓ navigate, Enter copy+close(+paste), ⌘Enter paste an image's OCR
+  text instead of the image, Esc close, ⌘F focus search,
   ⌘1–⌘4 tabs (Classic/Shell/Favs/Media), ⌘P pin, ⌘S or ⌘B favorite,
   ⌘D or ⌥⌫ delete (⌥⌫ yields to delete-word while editing a non-empty
   search), ⌘R regex toggle (also the `.*` button). Hover selects a row;
