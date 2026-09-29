@@ -123,6 +123,7 @@ struct JWTCardView: View {
                 Text("JWT Inspector")
                     .font(.system(size: 12.5, weight: .bold))
                     .foregroundStyle(.primary)
+                    .fixedSize()
 
                 Text(jwt.algorithm)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -132,6 +133,7 @@ struct JWTCardView: View {
                         Capsule()
                             .fill(Color.primary.opacity(0.08))
                     )
+                    .fixedSize()
 
                 if let isExp = jwt.isExpired {
                     HStack(spacing: 3) {
@@ -148,6 +150,7 @@ struct JWTCardView: View {
                         Capsule()
                             .fill((isExp ? Color.red : Color.green).opacity(0.12))
                     )
+                    .fixedSize()
                 }
 
                 Spacer()
@@ -158,9 +161,14 @@ struct JWTCardView: View {
                 } label: {
                     Label("Copy JSON", systemImage: "doc.on.doc")
                         .font(.system(size: 10))
+                        // Icon-only: title + both badges + a text label don't
+                        // fit the minimum pane width without truncation.
+                        .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
+                .fixedSize()
+                .help("Copy payload or header JSON")
             }
 
             if jwt.subject != nil || jwt.issuer != nil || jwt.expirationDate != nil {
@@ -191,7 +199,12 @@ struct JWTCardView: View {
 
             Text(jwt.payloadJSON)
                 .font(.system(size: 11, design: .monospaced))
-                .textSelection(.enabled)
+                // No .textSelection here: on macOS a selectable multi-line
+                // Text in this card collapses to its first line ("{…").
+                // "Copy JSON" covers copying. Capped so huge tokens can't
+                // swallow the pane.
+                .lineLimit(10)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(

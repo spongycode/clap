@@ -86,6 +86,9 @@ enum OutputFormatter {
         let lastUsedAt: String
         let sizeBytes: Int64
         let isPinned: Bool
+        let isFavorite: Bool
+        let tags: [String]
+        let shortcut: String?
         let useCount: Int
         let sourceApp: String?
     }
@@ -105,6 +108,9 @@ enum OutputFormatter {
             lastUsedAt: iso8601.string(from: entry.lastUsedAt),
             sizeBytes: entry.sizeBytes,
             isPinned: entry.isPinned,
+            isFavorite: entry.isFavorite,
+            tags: entry.tags,
+            shortcut: entry.shortcut,
             useCount: entry.useCount,
             sourceApp: entry.sourceApp
         )

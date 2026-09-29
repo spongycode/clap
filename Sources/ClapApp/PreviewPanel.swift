@@ -171,6 +171,7 @@ struct PreviewView: View {
     @State private var image: NSImage?
     @State private var parsed: ParsedEntryContent = .empty
     @State private var qrVisible = false
+    @State private var idCopied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -348,6 +349,19 @@ struct PreviewView: View {
                 }
             }
             GridRow {
+                metaLabel("ID")
+                HStack(spacing: 6) {
+                    Text(String(entry.id))
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                    IconActionButton(systemImage: idCopied ? "checkmark" : "doc.on.doc",
+                                     help: "Copy id for CLI use (e.g. clap get \(entry.id))",
+                                     isSelected: idCopied) {
+                        copyID()
+                    }
+                }
+            }
+            GridRow {
                 metaLabel("Type")
                 Text(entryTypeDescription)
                     .font(.system(size: 12))
@@ -434,6 +448,20 @@ struct PreviewView: View {
     }
 
     // MARK: Helpers
+
+    /// Copies the numeric id marked transient, so clap's own pasteboard
+    /// monitor doesn't record the digits as a new history entry.
+    private func copyID() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(String(entry.id), forType: .string)
+        pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+        idCopied = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            idCopied = false
+        }
+    }
 
     private var highlightedDisplayedText: AttributedString {
         SearchHighlighter.highlight(

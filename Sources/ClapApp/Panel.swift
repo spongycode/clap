@@ -8,9 +8,13 @@ final class ClapPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Set by PanelController so every close path collapses the preview and
+    /// records the frame, rather than a bare orderOut leaving it widened.
+    var onCancel: (() -> Void)?
+
     /// Esc via the responder chain.
     override func cancelOperation(_ sender: Any?) {
-        orderOut(nil)
+        if let onCancel { onCancel() } else { orderOut(nil) }
     }
 }
 
@@ -65,6 +69,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.contentView = NSHostingView(rootView: ContentView().environmentObject(appState))
 
+        panel.onCancel = { [weak self] in self?.hide() }
         installKeyMonitor()
 
         appState.slideout.window = panel
@@ -91,8 +96,9 @@ final class PanelController: NSObject, NSWindowDelegate {
         Task { [weak self] in
             guard let raw = try? await appState.store.config(Self.frameConfigKey) else { return }
             let rect = NSRectFromString(raw)
+            guard let self, self.savedFrame == nil else { return }
             if rect.width >= Self.minPanelSize.width, rect.height >= Self.minPanelSize.height {
-                self?.savedFrame = rect
+                self.savedFrame = rect
             }
         }
     }
@@ -117,26 +123,32 @@ final class PanelController: NSObject, NSWindowDelegate {
            front.bundleIdentifier != Bundle.main.bundleIdentifier {
             previousApp = front
         }
-        appState.panelWillShow()
+        appState.panelWillShow()   // collapses any open preview first
         suppressFrameSave = true
-        var targetSize = savedFrame?.size ?? Self.panelSize
-        targetSize.width = appState.slideout.contentWidth
+        let slideout = appState.slideout
+        if let saved = savedFrame {
+            // The saved frame is the source of truth for the list width;
+            // contentWidth starts at a default every launch.
+            slideout.contentWidth = max(slideout.minimumContentWidth, saved.width)
+        }
+        let targetSize = NSSize(width: slideout.contentWidth,
+                                height: savedFrame?.height ?? Self.panelSize.height)
 
-        if let saved = savedFrame, frameIsOnAVisibleScreen(saved) {
-            // Reopen exactly where the user last dragged/resized it.
-            var reopenFrame = saved
-            reopenFrame.size.width = targetSize.width
-            panel.setFrame(reopenFrame, display: false)
+        if let saved = savedFrame, let screen = Self.bestScreen(for: saved) {
+            // Reopen where the user left it, nudged fully on-screen (a display
+            // may have been rearranged or unplugged since).
+            let reopen = NSRect(origin: saved.origin, size: targetSize)
+            panel.setFrame(Self.clamp(reopen, to: screen.visibleFrame), display: false)
         } else if let screen = screenWithMouse() {
             let frame = screen.visibleFrame
             let origin = NSPoint(
                 x: frame.midX - targetSize.width / 2,
                 y: frame.midY - targetSize.height / 2
             )
-            panel.setFrame(NSRect(origin: origin, size: targetSize), display: false)
+            panel.setFrame(Self.clamp(NSRect(origin: origin, size: targetSize), to: frame),
+                           display: false)
         }
         suppressFrameSave = false
-        appState.slideout.closePreview(animated: false)
         if appState.selectedEntry != nil {
             appState.slideout.startAutoOpen()
         }
@@ -177,21 +189,40 @@ final class PanelController: NSObject, NSWindowDelegate {
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
     }
 
-    /// A frame counts as restorable when a meaningful part of it is on some
-    /// screen (the saved display may have been unplugged).
-    private func frameIsOnAVisibleScreen(_ frame: NSRect) -> Bool {
-        NSScreen.screens.contains { screen in
-            let visible = screen.visibleFrame.intersection(frame)
-            return visible.width >= 100 && visible.height >= 100
+    /// The screen showing the largest part of `frame`, or nil when it is on
+    /// none of them (display unplugged) — the caller then re-centers.
+    static func bestScreen(for frame: NSRect) -> NSScreen? {
+        var best: NSScreen?
+        var bestArea: CGFloat = 0
+        for screen in NSScreen.screens {
+            let overlap = screen.visibleFrame.intersection(frame)
+            guard !overlap.isNull else { continue }
+            let area = overlap.width * overlap.height
+            if area > bestArea {
+                best = screen
+                bestArea = area
+            }
         }
+        return best
+    }
+
+    /// Shrinks `frame` to fit `bounds` if needed, then slides it inside.
+    static func clamp(_ frame: NSRect, to bounds: NSRect) -> NSRect {
+        var result = frame
+        result.size.width = min(result.width, bounds.width)
+        result.size.height = min(result.height, bounds.height)
+        result.origin.x = min(max(result.minX, bounds.minX), bounds.maxX - result.width)
+        result.origin.y = min(max(result.minY, bounds.minY), bounds.maxY - result.height)
+        return result
     }
 
     private func rememberCurrentFrame() {
-        guard !suppressFrameSave, panel.isVisible else { return }
-        var frame = panel.frame
-        if appState.slideout.state.isOpen {
-            frame.size.width = appState.slideout.contentWidth
-        }
+        let slideout = appState.slideout
+        // Preview open/close animations move and resize the window without
+        // the user doing anything; those intermediate frames must not be
+        // saved. The list itself doesn't move during them.
+        guard !suppressFrameSave, panel.isVisible, !slideout.state.isAnimating else { return }
+        let frame = slideout.listFrame(of: panel)
         savedFrame = frame
         // Debounced: windowDidMove fires continuously while dragging.
         frameSaveTask?.cancel()
@@ -216,10 +247,15 @@ final class PanelController: NSObject, NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         // Live-sync while dragging an edge with the preview open; the list
         // absorbs the delta and the pane keeps its width.
-        guard appState.slideout.state == .open else { return }
-        appState.slideout.contentWidth = max(
-            appState.slideout.minimumContentWidth,
-            panel.frame.width - appState.slideout.slideoutWidth)
+        if appState.slideout.state == .open {
+            appState.slideout.contentWidth = max(
+                appState.slideout.minimumContentWidth,
+                panel.frame.width - appState.slideout.slideoutWidth)
+        }
+        // The edge-resize handles call setFrame directly, which never ends a
+        // "live resize", and top/right drags don't move the origin — so
+        // windowDidMove alone would miss them. Saves are debounced.
+        rememberCurrentFrame()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {

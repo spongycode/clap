@@ -102,12 +102,30 @@ public final class SlideoutController: ObservableObject {
 
     public func computePlacement(window: NSWindow, for size: NSSize) -> SlideoutPlacement {
         guard let screen = window.screen?.visibleFrame else { return placement }
-        let windowFrame = window.frame
-        if windowFrame.minX + size.width > screen.maxX {
-            return .left
-        } else {
-            return .right
+        return Self.placement(listFrame: window.frame, totalWidth: size.width, screen: screen)
+    }
+
+    /// Right if the widened window fits on screen, else left if that fits,
+    /// else whichever side overflows less (a narrow screen fits neither).
+    static func placement(listFrame: NSRect, totalWidth: CGFloat, screen: NSRect) -> SlideoutPlacement {
+        let extra = totalWidth - listFrame.width
+        let rightOverflow = max(0, listFrame.minX + totalWidth - screen.maxX)
+        let leftOverflow = max(0, screen.minX - (listFrame.minX - extra))
+        if rightOverflow == 0 { return .right }
+        if leftOverflow == 0 { return .left }
+        return leftOverflow < rightOverflow ? .left : .right
+    }
+
+    /// Screen rect of the list column alone, whatever the preview's state.
+    /// This is what gets persisted as the panel's frame: the list is the
+    /// anchor, the preview is transient.
+    func listFrame(of window: NSWindow) -> NSRect {
+        var frame = window.frame
+        if state.isOpen, placement == .left {
+            frame.origin.x = frame.maxX - contentWidth
         }
+        frame.size.width = state.isOpen ? contentWidth : frame.width
+        return frame
     }
 
     public func openPreview(animated: Bool = true) {
@@ -153,7 +171,10 @@ public final class SlideoutController: ObservableObject {
     }
 
     public func closePreview(animated: Bool = true) {
-        guard state != .closed, state != .closing else { return }
+        guard state != .closed else { return }
+        // An animated close already in flight is fine to leave running; an
+        // instant close must still take over from it (e.g. hiding mid-close).
+        if animated, state == .closing { return }
         guard let window else { return }
 
         let targetSize = NSSize(width: contentWidth, height: window.frame.height)
@@ -184,12 +205,36 @@ public final class SlideoutController: ObservableObject {
                 }
             }
         } else {
-            var newOrigin = window.frame.origin
-            if placement == .left && state == .open {
+            closeImmediately(window: window, targetSize: targetSize)
+        }
+    }
+
+    /// Instant close from ANY non-closed state. Handles hiding mid-animation:
+    /// the list's position comes from the pre-animation origin rather than
+    /// the half-animated frame, and the in-flight frame animation is
+    /// superseded so it can't keep widening the window after we've settled it.
+    private func closeImmediately(window: NSWindow, targetSize: NSSize) {
+        var newOrigin = window.frame.origin
+        switch state {
+        case .opening, .closing:
+            // Both animations started from the list's own origin.
+            newOrigin = windowAnimationOrigin ?? newOrigin
+            if state == .closing, placement == .left {
                 newOrigin.x += slideoutWidth
             }
-            state = .closed
-            window.setFrame(NSRect(origin: newOrigin, size: targetSize), display: true)
+        case .open:
+            if placement == .left { newOrigin.x += slideoutWidth }
+        case .closed:
+            break
         }
+        state = .closed
+        let target = NSRect(origin: newOrigin, size: targetSize)
+        // A zero-duration animator write replaces any running frame animation;
+        // a plain setFrame would be overwritten by the animation's next tick.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            window.animator().setFrame(target, display: true)
+        }
+        window.setFrame(target, display: true)
     }
 }

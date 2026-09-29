@@ -3,11 +3,12 @@ import ClapCore
 
 enum ListCommand {
     static let usage = """
-    Usage: clap list [--images] [--shell] [--tag <name>] [--limit N] [--offset N] [--json]
+    Usage: clap list [--images] [--shell] [--favorites] [--tag <name>] [--limit N] [--offset N] [--json]
 
     Lists clipboard and shell entries, most recently used first.
       --images      Only image entries
       --shell       Only shell command entries
+      --favorites   Only favorites
       --tag <name>  Filter by tag / pinboard
       --limit N     Max rows (default 20)
       --offset N    Skip N rows
@@ -16,7 +17,7 @@ enum ListCommand {
 
     static func run(_ args: [String], context: CLIContext) async {
         let parsed = ArgParser.parse(args,
-                                     boolFlags: ["--images", "--shell", "--json"],
+                                     boolFlags: ["--images", "--shell", "--favorites", "--json"],
                                      valueFlags: ["--tag", "--limit", "--offset"],
                                      usage: usage)
         guard parsed.positionals.isEmpty else {
@@ -32,7 +33,8 @@ enum ListCommand {
 
         let (entries, dataDir) = await CLI.run { () -> ([ClipboardEntry], URL) in
             let store = try context.makeStore()
-            let query = SearchQuery(type: type, tag: tag, limit: limit, offset: offset)
+            let query = SearchQuery(type: type, favoriteOnly: parsed.has("--favorites"),
+                                    tag: tag, limit: limit, offset: offset)
             let entries = try await store.search(query)
             return (entries, store.dataDir)
         }

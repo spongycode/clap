@@ -12,11 +12,28 @@ enum ResizeDirection {
     case topLeft, topRight, bottomLeft, bottomRight
 
     var cursor: NSCursor {
+        if #available(macOS 15.0, *) {
+            return .frameResize(position: frameResizePosition, directions: .all)
+        }
         switch self {
         case .left, .right: return .resizeLeftRight
         case .top, .bottom: return .resizeUpDown
-        case .topLeft, .bottomRight: return .closedHand
-        case .topRight, .bottomLeft: return .closedHand
+        // No public diagonal resize cursor before macOS 15.
+        case .topLeft, .topRight, .bottomLeft, .bottomRight: return .crosshair
+        }
+    }
+
+    @available(macOS 15.0, *)
+    private var frameResizePosition: NSCursor.FrameResizePosition {
+        switch self {
+        case .left: return .left
+        case .right: return .right
+        case .top: return .top
+        case .bottom: return .bottom
+        case .topLeft: return .topLeft
+        case .topRight: return .topRight
+        case .bottomLeft: return .bottomLeft
+        case .bottomRight: return .bottomRight
         }
     }
 }

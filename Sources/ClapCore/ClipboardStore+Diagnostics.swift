@@ -21,7 +21,12 @@ extension ClipboardStore {
         ConfigKey.shellEnabled: "1",
         ConfigKey.shellMaxEntries: "50000",
         ConfigKey.shellMaxSize: "10485760",   // 10 MB
-        ConfigKey.shellHistfile: ""          // empty = auto-detect
+        ConfigKey.shellHistfile: "",         // empty = auto-detect
+        // Set to "1" by the app after the one-time history backfill.
+        ConfigKey.shellInitialImported: "0",
+        ConfigKey.snippetsEnabled: "1",
+        // Must match HotKeyDefinition.defaultID in ClapApp.
+        ConfigKey.uiHotkey: "cmd+shift+v"
     ]
 
     /// Returns the stored value, falling back to the documented default when
