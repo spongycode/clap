@@ -535,7 +535,8 @@ struct ConfigStatsTests {
             let expectedKeys = ["text.max_entries", "text.max_size", "image.max_entries",
                                 "image.max_size", "monitoring.paused", "exclusions",
                                 "retention.days", "launch_at_login", "paste.on_copy",
-                                "shell.enabled", "shell.max_entries", "shell.max_size", "shell.histfile"]
+                                "shell.enabled", "shell.max_entries", "shell.max_size", "shell.histfile",
+                                "shell.initial_imported", "snippets.enabled", "ui.hotkey"]
             for key in expectedKeys {
                 #expect(dict[key] != nil, "missing \(key)")
             }

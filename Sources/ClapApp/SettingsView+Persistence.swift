@@ -48,7 +48,7 @@ extension SettingsView {
 
     // MARK: - Component health
 
-    private func refreshHealth() {
+    func refreshHealth() {
         guard let health = healthProvider?() else { return }
         hotKeyOK = health.hotKeyOK
         snippetTapOK = health.snippetTapOK

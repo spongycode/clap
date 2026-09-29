@@ -85,6 +85,21 @@ struct OutputFormatterTests {
         #expect(lines[1].contains("hello"))
     }
 
+    @Test func entryJSONIncludesFavoriteTagsAndShortcut() throws {
+        let entry = ClipboardEntry(
+            id: 3, type: .text, content: "me@example.com", imagePath: nil, imageFormat: nil,
+            contentHash: "h", createdAt: Date(), lastUsedAt: Date(), sizeBytes: 14,
+            isPinned: false, isFavorite: true, useCount: 2, sourceApp: nil,
+            shortcut: ";email", tags: ["work", "contact"])
+        let json = OutputFormatter.entryJSON(entry, dataDir: URL(fileURLWithPath: "/tmp"))
+        #expect(json.isFavorite)
+        #expect(json.tags == ["work", "contact"])
+        #expect(json.shortcut == ";email")
+        let encoded = try OutputFormatter.encodeJSON(json)
+        #expect(encoded.contains("\"isFavorite\" : true"))
+        #expect(encoded.contains("\"shortcut\" : \";email\""))
+    }
+
     @Test func encodeJSONProducesSortedStableOutput() throws {
         struct Payload: Codable, Equatable { let b: Int; let a: Int }
         let json = try OutputFormatter.encodeJSON(Payload(b: 1, a: 2))

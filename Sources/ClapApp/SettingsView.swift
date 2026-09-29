@@ -93,6 +93,15 @@ struct SettingsView: View {
             .task {
                 await load()
             }
+            .task {
+                // Health can change while Settings is open (the snippet tap
+                // retries until Accessibility is granted; the hotkey
+                // re-registers on preset changes). Cancelled on disappear.
+                while !Task.isCancelled {
+                    refreshHealth()
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                }
+            }
             .onReceive(DistributedNotificationCenter.default().publisher(for: IPC.Name.storeChanged.notification)) { _ in
                 Task { await refreshStats() }
             }

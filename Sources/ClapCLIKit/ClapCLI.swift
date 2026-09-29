@@ -22,6 +22,10 @@ public enum ClapCLI {
         "out": { await DeleteCommand.runOutAlias($0, context: $1) },
         "pin": { await PinCommand.run($0, pinned: true, context: $1) },
         "unpin": { await PinCommand.run($0, pinned: false, context: $1) },
+        "fav": { await PinCommand.run($0, flag: .favorite, on: true, context: $1) },
+        "unfav": { await PinCommand.run($0, flag: .favorite, on: false, context: $1) },
+        "favorite": { await PinCommand.run($0, flag: .favorite, on: true, context: $1) },
+        "unfavorite": { await PinCommand.run($0, flag: .favorite, on: false, context: $1) },
         "tag": { await TagCommand.run($0, context: $1) },
         "tags": { await TagCommand.run(["list"] + $0, context: $1) },
         "backup": { await BackupCommand.run($0, mode: .backup, context: $1) },
@@ -99,7 +103,7 @@ enum HelpText {
 
     Usage:
       clap                                                  Open the clipboard UI (asks ClapApp)
-      clap list [--images] [--shell] [--tag <tag>] [--limit N] [--offset N] [--json]
+      clap list [--images] [--shell] [--favorites] [--tag <tag>] [--limit N] [--offset N] [--json]
       clap search <query> [--regex <pat>] [--type text|image|shell] [--tag <tag>] [--limit N] [--offset N] [--json]
       clap get <id> [--json]
       clap copy <id>
@@ -108,6 +112,7 @@ enum HelpText {
       clap in <text>                                        Alias for clap add
       clap out [<id> | <exact text>]                        Alias for clap delete
       clap pin <id> / clap unpin <id>
+      clap fav <id> / clap unfav <id>                       Favorite (alias: favorite/unfavorite)
       clap tag add <id> <tag> / clap tag remove <id> <tag>
       clap tags / clap tag list [id]
       clap backup <dir> / clap restore <dir>            Full-history backup & restore

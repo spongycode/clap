@@ -34,17 +34,23 @@
 
 ---
 
-## Screenshots
+## See it in action
 
 <p align="center">
-  <img src="Resources/screens/classic_items.png" width="49%" alt="Classic Tab — Clipboard History & Previews" />
-  <img src="Resources/screens/media_items.png" width="49%" alt="Media Tab — Image History & Tags" />
+  <a href="Resources/reel/clap_reel.mp4">
+    <img src="Resources/reel/clap_reel_preview.webp" width="100%" alt="clap in 30 seconds — shortcut, search, OCR, smart cards, shell history, privacy">
+  </a>
 </p>
 
 <p align="center">
-  <img src="Resources/screens/shell_items.png" width="49%" alt="Shell Tab — Shell Command History" />
-  <img src="Resources/screens/settings.png" width="49%" alt="Settings Window — Limits & Customization" />
+  <img src="Resources/screens/classic_items.png" width="49%" alt="Classic tab — clipboard history with pins, favorites, tags and a JSON preview" />
+  <img src="Resources/screens/media_items.png" width="49%" alt="Media tab — image grid with OCR text extracted from a screenshot" />
 </p>
+
+<p align="center">
+  <img src="Resources/screens/features_overview.png" width="98%" alt="Settings with live usage and health checks; the Favs pinboard in front of the Shell tab; smart cards for JWT, epoch timestamps, colors and JSON repair" />
+</p>
+
 
 ---
 
@@ -93,7 +99,7 @@ For development & testing:
 
 ```bash
 swift build          # Build ClapApp + clap CLI
-swift test           # Run 92 unit tests
+swift test           # Run the test suites (core, CLI, app)
 .build/debug/ClapApp # Run debug app directly
 ```
 
@@ -130,7 +136,7 @@ Press **⌘⇧V** to open the panel (configurable in Settings to `⌘⇧B`, `⌘
 
 ```bash
 clap                                              # Open clipboard UI
-clap list [--images] [--shell] [--limit N]        # List recent clipboard or shell entries
+clap list [--images|--shell] [--favorites]       # List recent entries (also --tag, --limit, --json)
 clap search <query> [--type text|image|shell]     # Full-text search
 clap search --regex "^docker.*"                   # Regex search
 clap get <id>                                     # Show entry (pipe-friendly raw output)
@@ -139,8 +145,10 @@ clap add <text> | -                               # Insert an entry (alias: clap
 echo "piped" | clap add -                         # Insert from a pipe
 clap delete <id> | --text <str> | --regex <pat>   # Delete entries (alias: clap out)
 clap pin <id> / clap unpin <id>                   # Pin/unpin entries
+clap fav <id> / clap unfav <id>                   # Favorite/unfavorite entries
+clap tag add|remove <id> <tag> / clap tags        # Tags & pinboards
 clap backup <dir> / clap restore <dir>            # Full-history backup & restore
-clap clear [--force]                              # Wipe history (preserves pinned)
+clap clear [--force]                              # Wipe ALL history, pinned and favorites included
 clap stats [--json]                               # Storage and activity metrics
 clap config get [key] / set <key> <val>           # Manage limits, retention, exclusions
 clap doctor                                       # System diagnostic checks

@@ -60,7 +60,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             guard let self else { return }
             let recent = (try? await self.store.list(type: .text, limit: 5, offset: 0)) ?? []
             let paused = ((try? await self.store.config(ConfigKey.monitoringPaused)) ?? "0") == "1"
-            let hotkeyStr = ((try? await self.store.config("ui.hotkey")) ?? "cmd+shift+v")
+            let hotkeyStr = ((try? await self.store.config(ConfigKey.uiHotkey)) ?? HotKeyDefinition.defaultID)
             self.currentShortcut = HotKeyDefinition.find(hotkeyStr)
             self.cachedRecent = recent
             self.cachedPaused = paused

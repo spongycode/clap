@@ -124,17 +124,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // rendering of clipboard history.
         #if DEBUG
         if let snapshotDir = ProcessInfo.processInfo.environment["CLAP_DEBUG_SNAPSHOT_DIR"] {
+            // Scriptable for README screenshots (all optional):
+            //   CLAP_DEBUG_SNAPSHOT_TAB       classic|shell|favs|media
+            //   CLAP_DEBUG_SNAPSHOT_TAG       pinboard tag for the Favs tab
+            //   CLAP_DEBUG_SNAPSHOT_QUERY     search text to type
+            //   CLAP_DEBUG_SNAPSHOT_SELECT_ID entry id to select (default: row one)
+            //   CLAP_DEBUG_SNAPSHOT_SETTINGS  "1" = open the Settings window instead
+            let env = ProcessInfo.processInfo.environment
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let self else { return }
+                if env["CLAP_DEBUG_SNAPSHOT_SETTINGS"] == "1" {
+                    self.settingsController.show()
+                    return
+                }
                 self.panelController.show()
-                if ProcessInfo.processInfo.environment["CLAP_DEBUG_SNAPSHOT_TAB"] == "media" {
-                    self.appState.selectTab(.media)
+                switch env["CLAP_DEBUG_SNAPSHOT_TAB"] {
+                case "media": self.appState.selectTab(.media)
+                case "shell": self.appState.selectTab(.shell)
+                case "favs": self.appState.selectTab(.favs)
+                default: break
                 }
-                // Select the first row so the preview window appears too.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                    self.appState.moveSelection(1)
+                if let tag = env["CLAP_DEBUG_SNAPSHOT_TAG"] { self.appState.selectTag(tag) }
+                if let query = env["CLAP_DEBUG_SNAPSHOT_QUERY"] { self.appState.queryChanged(query) }
+                if let raw = env["CLAP_DEBUG_SNAPSHOT_SELECT_ID"], let id = Int64(raw) {
+                    // Wait until the entry is actually loaded: selecting before
+                    // the reload lands gets overwritten by its row-one default.
+                    Task { @MainActor in
+                        for _ in 0..<30 where !self.appState.flatRows.contains(where: { $0.id == id }) {
+                            try? await Task.sleep(nanoseconds: 100_000_000)
+                        }
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                        self.appState.selectedID = id
+                    }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                        // The reload usually auto-selects row one already.
+                        if self.appState.selectedID == nil { self.appState.moveSelection(1) }
+                    }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                // Selection at +0.7s, preview auto-opens 1s later and animates
+                // for 0.28s — snapshot well after it has settled.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     let dir = URL(fileURLWithPath: snapshotDir, isDirectory: true)
                     self.panelController.writeSnapshot(to: dir.appendingPathComponent("panel.png"))
                 }

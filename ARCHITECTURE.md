@@ -1,7 +1,7 @@
 # clap — Architecture Contract
 
 Native macOS clipboard manager. Local-first, no network, no telemetry.
-This document is the binding contract between the three targets. Do not
+This document is the binding contract between the targets. Do not
 deviate from public API signatures, schema, or IPC names without updating
 this file.
 
@@ -83,16 +83,26 @@ CREATE INDEX IF NOT EXISTS idx_entry_tags_entry ON entry_tags(entry_id);
 
 ## Config keys (strings in `config` table, typed accessors in Settings)
 
-- `text.max_entries` (Int, default 100_000)
-- `text.max_size` (bytes, Int64, default 52_428_800 = 50MB)
-- `image.max_entries` (Int, default 500)
-- `image.max_size` (bytes, Int64, default 104_857_600 = 100MB)
+All keys are constants on `ConfigKey` (CoreConstants.swift); defaults live in
+`ClipboardStore.configDefaults`, so `clap config get` lists every key.
+
+- `text.max_entries` (Int, default 100_000) / `text.max_size` (bytes, default 50MB)
+- `image.max_entries` (Int, default 500) / `image.max_size` (bytes, default 100MB)
+- `shell.max_entries` (Int, default 50_000) / `shell.max_size` (bytes, default 10MB)
+- `shell.enabled` ("0"/"1", default "1") — watch and ingest shell history
+- `shell.histfile` (path, default "" = auto-detect `$HISTFILE`, ~/.zsh_history, ~/.bash_history)
+- `shell.initial_imported` ("0"/"1", default "0") — app sets "1" after the
+  one-time history backfill succeeds
 - `monitoring.paused` ("0"/"1", default "0")
 - `exclusions` (JSON array of bundle ids, default `[]`)
 - `retention.days` (Int, 0 = never, default 0)
 - `launch_at_login` ("0"/"1", default "0")
 - `paste.on_copy` ("0"/"1", default "1") — after a UI copy, synthesize Cmd+V
-  into the frontmost app (needs Accessibility; copy-only fallback)
+  into the frontmost app (needs Accessibility; AppleScript fallback)
+- `snippets.enabled` ("0"/"1", default "1") — snippet expansion keystroke tap
+- `ui.hotkey` (preset id, default "cmd+shift+v"; must match
+  `HotKeyDefinition.defaultID`)
+- `ui.panel_frame` (NSStringFromRect; no default — unset means "center")
 
 Size values accept human forms in CLI (`50MB`, `1GB`) — parse in ClapCore
 (`ByteSize.parse/format`).
@@ -100,12 +110,12 @@ Size values accept human forms in CLI (`50MB`, `1GB`) — parse in ClapCore
 ## ClapCore public API (implement exactly)
 
 ```swift
-public enum EntryType: String, Codable, Sendable { case text, image }
+public enum EntryType: String, Codable, Sendable, CaseIterable { case text, image, shell }
 
 public struct ClipboardEntry: Identifiable, Sendable, Equatable {
     public let id: Int64
     public let type: EntryType
-    public let content: String?        // normalized text
+    public let content: String?        // normalized text; OCR text for images
     public let imagePath: String?      // relative path under images/
     public let imageFormat: String?
     public let contentHash: String
@@ -113,47 +123,60 @@ public struct ClipboardEntry: Identifiable, Sendable, Equatable {
     public let lastUsedAt: Date
     public let sizeBytes: Int64
     public let isPinned: Bool
+    public let isFavorite: Bool
     public let useCount: Int
     public let sourceApp: String?
+    public let shortcut: String?       // snippet trigger, e.g. ";email"
+    public let tags: [String]
 }
 
 public struct SearchQuery: Sendable {
     public var text: String?           // FTS terms / phrase (quoted)
     public var regex: String?          // regex pattern (mutually exclusive with text)
-    public var type: EntryType?        // nil = all
+    public var type: EntryType?        // single-type filter; wins over `types`
+    public var types: Set<EntryType>?  // multi-type filter (Classic = text+image)
     public var pinnedOnly: Bool
+    public var favoriteOnly: Bool
+    public var tag: String?
     public var limit: Int
     public var offset: Int
-    public init(text: String? = nil, regex: String? = nil, type: EntryType? = nil,
-                pinnedOnly: Bool = false, limit: Int = 100, offset: Int = 0)
+    public var effectiveTypes: Set<EntryType>? { get }
     /// Parses UI/CLI query syntax: bare terms, "quoted phrase",
-    /// `regex:<pat>`, `type:text|image`. Unknown filters ignored.
+    /// `regex:<pat>`, `type:text|image|shell`, `tag:<name>`. Unknown filters ignored.
     public static func parse(_ raw: String, limit: Int, offset: Int) -> SearchQuery
 }
 
 public struct StoreStats: Sendable {
-    public let textCount: Int, imageCount: Int
-    public let textBytes: Int64, imageBytes: Int64
+    public let textCount: Int, imageCount: Int, shellCount: Int
+    public let textBytes: Int64, imageBytes: Int64, shellBytes: Int64
     public let pinnedCount: Int
     public let eventsToday: Int, duplicatesAvoidedToday: Int
     public let oldestEntry: Date?
 }
 
 /// The single entry point. An actor so all DB access is serialized per process.
-/// Multi-process safety comes from SQLite WAL + busy_timeout.
+/// Multi-process safety comes from SQLite WAL + busy_timeout. Implementation is
+/// split across ClipboardStore+Capture/+Query/+Mutations/+Maintenance/
+/// +Diagnostics/+Backup.
 public actor ClipboardStore {
     public init(dataDir: URL? = nil,
                 now: @escaping @Sendable () -> Date = { Date() },
                 ocr: any OCREngine = VisionOCREngine()) throws
     public nonisolated let dataDir: URL
 
-    // Capture path (fast): normalize → hash → indexed lookup → insert or touch.
-    // Returns the entry and whether it was a duplicate (touched, not inserted).
+    // Capture (fast path): normalize → hash → indexed lookup → insert or touch.
     // OCR runs OUTSIDE the write transaction and off the actor executor.
-    @discardableResult
-    public func captureText(_ raw: String, sourceApp: String?) throws -> (entry: ClipboardEntry, wasDuplicate: Bool)?  // nil if empty after normalization
-    @discardableResult
+    public func captureText(_ raw: String, sourceApp: String?) throws -> (entry: ClipboardEntry, wasDuplicate: Bool)?
     public func captureImage(data: Data, format: String, sourceApp: String?) async throws -> (entry: ClipboardEntry, wasDuplicate: Bool)?
+    public func updateOCRText(for entryID: Int64, ocrText: String) throws
+
+    // Shell history (no daily clipboard counters; re-runs merge into use_count)
+    public func ingestShell(_ command: String, executedAt: Date?, source: String? = nil) throws -> (id: Int64, merged: Bool)?
+    public func ingestShellBatch(_ commands: [(text: String, executedAt: Date?)], source: String? = nil) throws -> (imported: Int, merged: Int)
+
+    // Import (preserve metadata; duplicates merge)
+    public func importText(_ raw: String, createdAt: Date, lastUsedAt: Date, useCount: Int, pinned: Bool, sourceApp: String?, as type: EntryType = .text) async throws -> (id: Int64, merged: Bool)?
+    public func importImage(data: Data, format: String, createdAt: Date, lastUsedAt: Date, useCount: Int, pinned: Bool, sourceApp: String?) async throws -> (id: Int64, merged: Bool)?
 
     // Queries
     public func list(type: EntryType?, limit: Int, offset: Int) throws -> [ClipboardEntry]
@@ -162,21 +185,33 @@ public actor ClipboardStore {
     public func count(type: EntryType?) throws -> Int
 
     // Mutations
-    public func touch(id: Int64) throws                 // bump last_used_at + use_count
+    public func touch(id: Int64) throws
     public func delete(id: Int64) throws -> Bool
-    public func deleteMatching(text: String) throws -> Int      // exact normalized text
+    public func deleteMatching(text: String) throws -> Int
     public func deleteMatching(regexPattern: String) throws -> Int
     public func setPinned(_ pinned: Bool, id: Int64) throws -> Bool
-    public func clearAll() throws -> Int                 // returns removed count; also wipes image files
+    public func setFavorite(_ favorite: Bool, id: Int64) throws -> Bool
+    public func setShortcut(_ shortcut: String?, id: Int64) throws -> Bool
+    public func allShortcuts() throws -> [String: String]
+    public func addTag(_ rawTag: String, entryID: Int64) throws -> Bool
+    public func removeTag(_ rawTag: String, entryID: Int64) throws -> Bool
+    public func setTags(_ tags: [String], entryID: Int64) throws
+    public func tags(for entryID: Int64) throws -> [String]
+    public func allTags() throws -> [(tag: String, count: Int)]
+    public func clearAll() throws -> Int   // removes EVERYTHING incl. pinned/favorites; wipes image files
 
-    // Maintenance (called by background workers / CLI)
-    public func enforceLimits() throws -> Int            // LRU eviction, returns evicted count
+    // Maintenance (background workers / CLI) — pinned AND favorites exempt
+    public func enforceLimits() throws -> Int
     public func applyRetention() throws -> Int
     public func vacuumIfNeeded() throws
 
+    // Backup: backup.json (format "clap-backup" v1) + images/ folder
+    public func exportBackup(to directory: URL) throws -> Int
+    public func importBackup(from directory: URL) async throws -> (imported: Int, merged: Int, skipped: Int)
+
     // Image helpers
     public func imageFileURL(for entry: ClipboardEntry) -> URL?
-    public func thumbnailURL(for entry: ClipboardEntry) throws -> URL?  // generates lazily
+    public func thumbnailURL(for entry: ClipboardEntry) throws -> URL?  // generates lazily, atomically
 
     // Settings / stats / doctor
     public func config(_ key: String) throws -> String?
@@ -197,18 +232,20 @@ public enum ByteSize {
     public static func format(_ bytes: Int64) -> String
 }
 public enum SafeRegex {
-    /// Compiles NSRegularExpression; evaluates with a match-count/length guard.
-    /// Never throws at match time; invalid pattern → .invalidPattern error on compile.
+    /// Case-insensitive by default ((?-i) opts out). Length-capped pattern and
+    /// input slice; scans also have a wall-clock budget.
     public static func compile(_ pattern: String) throws -> NSRegularExpression
 }
+public enum ShellHistoryParser { /* zsh (metafied, extended, multiline) + bash */ }
 public enum TextSummaries {
-    public static func singleLine(_ s: String, maxChars: Int) -> String   // collapse ws/control chars, "…" truncate
-    public static func relativeTime(_ date: Date, now: Date) -> String    // "now", "5m", "2h", "3d", else "yyyy-MM-dd"
+    public static func singleLine(_ s: String, maxChars: Int) -> String
+    public static func relativeTime(_ date: Date, now: Date) -> String
 }
 public enum ImageFormats {
-    public static func uti(forFormat format: String) -> String?           // 'gif' → 'com.compuserve.gif'
+    public static func uti(forFormat format: String) -> String?
 }
 public enum ConfigKey { /* typed constants for every config-table key */ }
+public enum ClapVersion { public static let current: String }   // single version source
 
 /// Injectable OCR seam (Vision-backed default; tests use stubs).
 public protocol OCREngine: Sendable {
@@ -216,13 +253,17 @@ public protocol OCREngine: Sendable {
 }
 public struct VisionOCREngine: OCREngine {}
 
-// Shared clipboard content analysis (used by app UI and available to CLI):
-public struct ParsedColor: Sendable, Equatable {}   // r/g/b/a components
+// Shared clipboard content analysis (used by the app's preview smart cards):
+public struct ParsedColor: Sendable, Equatable {}
 public enum ColorParser { public static func parse(_ raw: String?) -> ParsedColor? }
 public enum CaseConverter { /* camel/pascal/snake/kebab/constant/upper/lower/title */ }
 public enum TextTransformer { /* Base64 + URL encode/decode with length guards */ }
 public struct JWTData: Sendable, Equatable { public static func parse(_ text: String?) -> JWTData? }
 public struct EpochData: Sendable, Equatable { public static func parse(_ text: String?) -> EpochData? }
+public struct JSONData: Sendable, Equatable { public static func parse(_ text: String?) -> JSONData? }
+public struct JSONRepairResult: Sendable, Equatable { public let repaired: String; public let fixes: [String] }
+public enum JSONRepair { public static func repair(_ source: String) -> JSONRepairResult? }
+public enum QRCodeBuilder { /* CoreImage QR, level M, <= 2000 bytes */ }
 
 // IPC names shared by both processes:
 public enum ClapIdentity { public static let bundleID = "com.spongycode.clap" }
@@ -241,10 +282,10 @@ Notes:
   to avoid pathological latency.
 - Default ordering everywhere: pinned first optional in UI layer; store returns
   `ORDER BY last_used_at DESC`.
-- Eviction: per-category count and byte limits applied to NON-PINNED rows only
-  (pinned entries live outside the budget — counting them would let enough
-  pinned rows permanently starve new captures); delete lowest `last_used_at`
-  where `is_pinned = 0`; entries larger than the whole category budget are
+- Eviction: per-category (text/image/shell) count and byte limits applied to
+  rows that are neither pinned nor favorite (those live outside the budget —
+  counting them would let enough of them permanently starve new captures);
+  delete lowest `last_used_at` first; entries larger than the whole category budget are
   evicted first; delete image files + thumbnails for evicted images.
 - Capture rejects content larger than the category's max_size outright (a
   single oversize entry must never trigger history-wiping eviction).
@@ -269,75 +310,95 @@ pgrep ClapApp), print hint to start the app.
 ## App specifics
 
 - Activation policy `.accessory` (no Dock icon). `LSUIElement` in packaged app.
-- Hotkey: Carbon `RegisterEventHotKey` (cmd+shift, key `B` = kVK_ANSI_B). No
-  accessibility permission needed.
+- Hotkey: Carbon `RegisterEventHotKey`, no Accessibility needed. Default
+  ⌘⇧V; 7 presets (`HotKeyDefinition.presets`: ⌘⇧V, ⌘⇧B, ⌘⇧C, ⌘⇧Space,
+  ⌥Space, ⌃⌥V, ⌃⌘V) chosen in Settings, persisted in `ui.hotkey`, and
+  re-registered live on `configChanged`.
 - Panel: borderless `NSPanel` (floating, `.nonactivatingPanel`, `.resizable`,
-  min 480×320), hosts SwiftUI. Movable by background drag, resizable at the
-  edges; the user-chosen frame is debounce-persisted to config key
-  `ui.panel_frame` and restored on every open (fallback: centered ~720×480 on
-  the mouse's screen when unset or the saved display is gone). Esc closes.
-  Opens with search focused.
-- Preview: a non-key child `NSPanel` follows the selection (200 ms debounce):
-  placed right of the panel, else left, else below, else above. Shows
-  scrollable text / fitted image plus metadata (id + transient-marked Copy ID
-  button, type, size, created/last-used, use count, source app name, pin).
-  Hidden with the panel; repositioned on move/resize.
+  min 460×280) hosting SwiftUI, with Liquid Glass (`NSGlassEffectView`) on
+  macOS 26 and `NSVisualEffectView` fallback. Movable by background drag;
+  resized via `EdgeResizeOverlay` handles (9pt edges / 20pt corners). The
+  user-chosen frame is debounce-persisted to `ui.panel_frame` and restored on
+  open (fallback: centered on the mouse's screen). Esc closes. Opens with
+  search focused.
+- Tabs: Classic (text+image), Shell, Favs (favorites, or one tag pinboard via
+  the tag pill bar), Media (image grid).
+- Preview (slideout): the panel window itself animates wider (0.28 s) to
+  reveal a preview pane, auto-opening 1 s after a selection; left/right side
+  chosen by screen room; draggable divider (content min 460, pane min 320).
+  Shows scrollable text (TextKit 2 for ≥1000 chars, with search-match
+  highlighting) or the image, smart cards (color, Base64/URL, JWT, epoch,
+  JSON pretty/minify/repair, OCR, QR), an Actions row (case/encoding
+  transforms, QR, snippet shortcut, tags), and metadata (id + transient-marked
+  Copy ID button, type, dimensions, size, first/last used, use count, source
+  app, tags, pin/favorite).
 - Pasteboard monitor: poll `NSPasteboard.general.changeCount` every 150 ms on a
   background task; on change, read text/image off the main thread, skip when
-  paused, skip when frontmost app is in exclusions, skip transient/concealed
-  pasteboard types (`org.nspasteboard.TransientType`,
-  `org.nspasteboard.ConcealedType`), then call `store.captureText/Image`.
-  When clap itself writes to the pasteboard (copy action), pre-bump the
-  expected changeCount so its own write is only used to touch recency, not
-  re-captured as new.
+  paused, skip when frontmost app is in exclusions, skip transient/concealed/
+  auto-generated pasteboard types, then call `store.captureText/Image`. When
+  clap itself writes (copy action) it calls expect/confirm with the resulting
+  changeCount so its own write only touches recency, while a foreign copy in
+  the same poll window is still captured.
+- Shell history monitor: one-time backfill on first launch (sets
+  `shell.initial_imported`), then polls the history file every 2 s reading only
+  appended bytes (inode change or shrink → re-anchor at EOF; partial trailing
+  line carried over).
+- Snippet expander: CGEvent keystroke tap (needs Accessibility; retries every
+  2 s until granted), 40-char buffer; on a `shortcut` match it deletes the
+  trigger and pastes the expansion.
 - UI lists are paged: fetch 100 rows, fetch more as selection/scroll nears the
-  end. Media tab = LazyVGrid of thumbnails.
-- Keys: ↑/↓ navigate, Enter copy+close, Esc close, Cmd+F focus search,
-  Cmd+1-Cmd+4 tabs, Cmd+P pin toggle, Cmd+D or Option+Delete delete (the
-  latter yields to delete-word while editing a non-empty search), hover
-  selects a row (pointer-driven selection never auto-scrolls), Cmd+R
-  regex-mode toggle
-  (also a `.*` button beside the search field; in regex mode the whole query
-  is the pattern). Number keys ①-⑨ shown for the first 9 rows; pressing 1-9
-  copies that row.
-- Copy action: write to NSPasteboard (declare types properly), `touch(id:)`,
-  close panel; when `paste.on_copy` is enabled, then synthesize Cmd+V into the
-  frontmost app (Paster, CGEvent; requires Accessibility, degrades to
-  copy-only with a one-time system prompt).
-- Background workers (in app): periodic `enforceLimits`, `applyRetention`,
-  thumbnail pre-generation, `vacuumIfNeeded` — all via detached low-priority
-  tasks, never on the main actor.
-- Menu bar: clipboard icon; menu = Open (Cmd+Shift+V hint), Pause/Resume
-  Monitoring (reflects state), Recent (top 5 text previews, truncated 40 chars),
-  Settings…, Quit.
-- Settings window (SwiftUI): limits (entries + sizes with MB fields), retention
-  picker, launch at login (SMAppService.mainApp), exclusions list (add via
-  bundle id text field + list of running apps), pause toggle.
+  end.
+- Keys: ↑/↓ navigate, Enter copy+close(+paste), Esc close, ⌘F focus search,
+  ⌘1–⌘4 tabs (Classic/Shell/Favs/Media), ⌘P pin, ⌘S or ⌘B favorite,
+  ⌘D or ⌥⌫ delete (⌥⌫ yields to delete-word while editing a non-empty
+  search), ⌘R regex toggle (also the `.*` button). Hover selects a row;
+  pointer-driven selection never auto-scrolls.
+- Copy action: write to NSPasteboard, `touch(id:)`, close panel; when
+  `paste.on_copy` is enabled, synthesize ⌘V into the frontmost app (Paster:
+  CGEvent, AppleScript fallback, rate-limited Accessibility prompt). Pop sound
+  + trackpad haptic feedback on success.
+- Background workers (in app): `enforceLimits` + `applyRetention` at launch and
+  every 5 minutes, hourly `vacuumIfNeeded`, thumbnail warmup — all detached,
+  low priority, never on the main actor.
+- Menu bar: template icon; menu = Open (shows current hotkey), Pause/Resume
+  Monitoring, Recent (top 5), Settings…, Quit.
+- Settings window (SwiftUI): limits per type with usage pills, shell history
+  section, retention picker, hotkey preset picker, launch at login
+  (SMAppService.mainApp), paste-on-select, snippets toggle, exclusions,
+  backup/restore, and a live Health section (hotkey registration, snippet tap).
 
 ## CLI command surface
 
 ```
-clap                       open UI (notify app)
-clap list [--images] [--limit N] [--offset N]
-clap search <query> [--regex <pat>] [--type text|image] [--limit N]
-clap get <id>
+clap                                   open UI (notify app; launches it if found next to the CLI)
+clap list [--images|--shell] [--favorites] [--tag <t>] [--limit N] [--offset N] [--json]
+clap search <query> [--regex <pat>] [--type text|image|shell] [--tag <t>] [--limit N] [--offset N] [--json]
+clap get <id> [--json]
 clap copy <id>
-clap add <text> | -                insert entry (- reads stdin); alias: clap in
+clap add <text> | -                    insert entry (- reads stdin); alias: clap in
 clap delete <id> | --text <text> | --regex <pat>
-clap out [<id> | <exact text>]     alias of delete
+clap out [<id> | <exact text>]         alias of delete
 clap pin <id> / clap unpin <id>
-clap clear [--force]
-clap stats
+clap fav <id> / clap unfav <id>        aliases: favorite / unfavorite
+clap tag add|remove|set <id> <tag...> / clap tag list [id] / clap tags
+clap backup <dir> / clap restore <dir>
+clap clear [--force]                   deletes ALL entries, pinned and favorites included
+clap stats [--json]
 clap config get [key] / clap config set <key> <value>
 clap doctor
 clap import maccy [--db <path>] [--dry-run]
+clap import shell-history [--file <path>] [--dry-run]
 clap pause / clap resume
 ```
 
+- Command logic lives in `ClapCLIKit`; `Sources/ClapCLI/Main.swift` only calls
+  `ClapCLI.main()`.
 - Output: aligned plain text; single-line previews truncated to 60 chars with
-  control chars stripped. `--json` flag on list/search/get/stats for scripting.
+  control chars stripped. `--json` on list/search/get/stats for scripting;
+  entry JSON includes isPinned, isFavorite, tags, and shortcut.
 - `copy`: read entry; text → NSPasteboard string; image → load file data, set
-  as image data with correct type; then `touch(id:)` and post `storeChanged`.
+  as image data with correct type; `touch(id:)` for shell entries, or when the
+  app isn't running (otherwise the app's monitor records the re-copy).
 - All commands honor `--data-dir <path>` and `CLAP_DATA_DIR`.
 - Exit codes: 0 ok, 1 not found / no match, 2 usage error.
 
