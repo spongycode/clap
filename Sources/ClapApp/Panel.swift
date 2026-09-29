@@ -314,6 +314,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         let chars = event.charactersIgnoringModifiers ?? ""
 
         if modifiers == .command {
+            if event.keyCode == 36 || event.keyCode == 76 {   // ⌘↩ / ⌘ keypad enter
+                appState.copySelectedAsText()
+                return nil
+            }
             if handleCommandKey(chars) { return nil }
             return event
         }

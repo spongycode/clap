@@ -350,6 +350,25 @@ final class AppState: ObservableObject {
         copy(entry)
     }
 
+    /// ⌘↩: paste an image's recognized (OCR) text instead of the image.
+    /// Text and shell entries behave exactly like plain Enter.
+    func copySelectedAsText() {
+        guard let entry = selectedEntry else { return }
+        guard entry.type == .image else { copy(entry); return }
+        guard let text = Self.extractedText(of: entry) else {
+            showTransientError("No text found in this image")
+            return
+        }
+        copyTransformedText(text)
+    }
+
+    /// OCR text stored for an image entry, or nil when recognition found none.
+    nonisolated static func extractedText(of entry: ClipboardEntry) -> String? {
+        guard entry.type == .image, let text = entry.content,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+
     func togglePinSelected() {
         guard let entry = selectedEntry else { return }
         Task { @MainActor [weak self] in

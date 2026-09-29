@@ -148,3 +148,27 @@ struct PanelFrameTests {
         #expect(slideout.listFrame(of: window) == NSRect(x: 768, y: 200, width: 520, height: 500))
     }
 }
+
+@Suite("⌘↩ extracted-text paste")
+struct ExtractedTextTests {
+    private func entry(_ type: EntryType, _ content: String?) -> ClipboardEntry {
+        ClipboardEntry(id: 1, type: type, content: content, imagePath: type == .image ? "x.png" : nil,
+                       imageFormat: type == .image ? "png" : nil, contentHash: "h", createdAt: Date(),
+                       lastUsedAt: Date(), sizeBytes: 1, isPinned: false, isFavorite: false,
+                       useCount: 1, sourceApp: nil)
+    }
+
+    @Test func imageWithOCRTextYieldsIt() {
+        #expect(AppState.extractedText(of: entry(.image, "Invoice #1042")) == "Invoice #1042")
+    }
+
+    @Test func imageWithoutUsableTextYieldsNil() {
+        #expect(AppState.extractedText(of: entry(.image, nil)) == nil)
+        #expect(AppState.extractedText(of: entry(.image, "  \n ")) == nil)
+    }
+
+    @Test func nonImagesAreNotTreatedAsOCR() {
+        #expect(AppState.extractedText(of: entry(.text, "hello")) == nil)
+        #expect(AppState.extractedText(of: entry(.shell, "git status")) == nil)
+    }
+}

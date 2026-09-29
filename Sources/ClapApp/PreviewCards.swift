@@ -384,6 +384,7 @@ struct ImageContentView: View {
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.mini)
+                            .help("Copy and paste the extracted text (⌘↩)")
                         }
 
                         Text(ocrText)
